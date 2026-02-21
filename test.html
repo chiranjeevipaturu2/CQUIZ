@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taking Test - CQUIZ</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        .q-panel {
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .q-panel.active {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Timer UI -->
+    <div id="timerDisplay"
+        style="position: fixed; top: 1rem; right: 10rem; font-family: monospace; font-size: 1.2rem; font-weight: 700; background: rgba(0,0,0,0.3); padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); display: none; z-index: 100;">
+        00:00:00
+    </div>
+
+    <div class="container"
+        style="max-width: 800px; height: 100vh; display: flex; flex-direction: column; justify-content: center;">
+
+        <!-- Header: Timer & Submit -->
+        <div class="glass-card mb-4 flex-between" style="padding: 1rem 2rem;">
+            <h3 id="testTitle">Test Name</h3>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <div id="questionNav" class="question-nav" style="max-width: 200px;">
+                    <!-- Circles generated here -->
+                </div>
+                <button onclick="submitTest()" class="btn btn-primary">Submit Test</button>
+            </div>
+        </div>
+
+        <!-- Question Card -->
+        <div class="glass-card"
+            style="min-height: 400px; display: flex; flex-direction: column; justify-content: space-between;">
+            <div id="questionsContainer">
+                <!-- Questions injected here -->
+            </div>
+
+            <!-- Navigation Controls -->
+            <div class="flex-between mt-4 border-t"
+                style="padding-top: 1rem; border-top: 1px solid var(--border-glass);">
+                <button id="prevBtn" class="btn btn-secondary" onclick="changeQ(-1)">Previous</button>
+                <span class="text-muted" id="qProgress">1 / X</span>
+                <button id="nextBtn" class="btn btn-secondary" onclick="changeQ(1)">Next</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="script.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBaA9KJKtszg7SPU3PJfil4vLg_ckZz6ys",
+            authDomain: "cquiz-7955e.firebaseapp.com",
+            projectId: "cquiz-7955e",
+            storageBucket: "cquiz-7955e.firebasestorage.app",
+            messagingSenderId: "931716478360",
+            appId: "1:931716478360:web:4f2a5406e42ee5a2ba27ed",
+            measurementId: "G-TM63LXHVHM"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Global helper for submissions
+        window.saveResultToFirestore = async (result) => {
+            try {
+                const resId = Date.now().toString(36);
+                await setDoc(doc(db, "submissions", resId), result);
+            } catch (err) {
+                console.error("Firestore Save Error:", err);
+            }
+        };
+
+        async function startTest() {
+            const user = requireAuth('student');
+            const params = new URLSearchParams(window.location.search);
+            const testId = params.get('id');
+
+            let test = null;
+
+            try {
+                // Try Firestore first
+                const docSnap = await getDoc(doc(db, "tests", testId));
+                if (docSnap.exists()) {
+                    test = { id: docSnap.id, ...docSnap.data() };
+                }
+            } catch (err) {
+                console.warn("Firestore fetch error, falling back to local:", err);
+            }
+
+            if (!test) {
+                const tests = getTests();
+                test = tests.find(t => t.id === testId);
+            }
+
+            if (!test) {
+                alert('Test not found');
+                window.location.href = 'student.html';
+                return;
+            }
+
+            // --- DATA NORMALIZATION (Firestore Safety) ---
+            if (test.questions && !Array.isArray(test.questions)) {
+                test.questions = Object.values(test.questions);
+            }
+            if (!test.questions || test.questions.length === 0) {
+                alert('This test has no questions.');
+                window.location.href = 'student.html';
+                return;
+            }
+
+            document.getElementById('testTitle').textContent = test.title;
+
+            const answers = {};
+            const viewedQuestions = new Set();
+            let timerInterval;
+            const TIMER_KEY = `cquiz_start_${testId}_${user.roll}`;
+            const SHUFFLE_KEY = `cquiz_order_${testId}_${user.roll}`;
+
+            // --- Shuffling logic ---
+            let questionOrder = [];
+            if (test.shuffleEnabled) {
+                const savedOrder = JSON.parse(sessionStorage.getItem(SHUFFLE_KEY));
+                if (savedOrder && savedOrder.length === test.questions.length) {
+                    questionOrder = savedOrder;
+                } else {
+                    questionOrder = test.questions.map((_, i) => i);
+                    for (let i = questionOrder.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [questionOrder[i], questionOrder[j]] = [questionOrder[j], questionOrder[i]];
+                    }
+                    sessionStorage.setItem(SHUFFLE_KEY, JSON.stringify(questionOrder));
+                }
+            } else {
+                questionOrder = test.questions.map((_, i) => i);
+            }
+
+            function initTimer() {
+                if (!test.durationInSeconds || test.durationInSeconds <= 0) return;
+                const timerDisplay = document.getElementById('timerDisplay');
+                timerDisplay.style.display = 'inline-block';
+                timerDisplay.style.position = 'static';
+                timerDisplay.style.marginRight = '1rem';
+
+                const submitBtn = document.querySelector('button[onclick="submitTest()"]');
+                if (submitBtn) submitBtn.parentElement.insertBefore(timerDisplay, submitBtn);
+
+                let startTime = localStorage.getItem(TIMER_KEY);
+                if (!startTime) {
+                    startTime = Date.now();
+                    localStorage.setItem(TIMER_KEY, startTime);
+                } else { startTime = parseInt(startTime); }
+
+                const endTime = startTime + (test.durationInSeconds * 1000);
+
+                function updateTimer() {
+                    const now = Date.now();
+                    const diff = endTime - now;
+                    if (diff <= 0) {
+                        timerDisplay.textContent = "00:00:00";
+                        clearInterval(timerInterval);
+                        submitTest(true);
+                        return;
+                    }
+                    const h = Math.floor(diff / 3600000);
+                    const m = Math.floor((diff % 3600000) / 60000);
+                    const s = Math.floor((diff % 60000) / 1000);
+                    timerDisplay.textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                }
+                updateTimer();
+                timerInterval = setInterval(updateTimer, 1000);
+            }
+
+            const qContainer = document.getElementById('questionsContainer');
+            const navContainer = document.getElementById('questionNav');
+
+            function escapeHTML(str) {
+                if (typeof str !== "string") return "";
+                return str
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;");
+            }
+
+            questionOrder.forEach((originalIdx, displayIdx) => {
+                const q = test.questions[originalIdx];
+                const panel = document.createElement('div');
+                panel.className = `q-panel ${displayIdx === 0 ? 'active' : ''}`;
+                panel.id = `q-panel-${displayIdx}`;
+
+                const qText = q.question || q.text || q.questionText || `Question ${displayIdx + 1}`;
+
+                // --- SAFELY NORMALIZE OPTIONS ---
+                let rawOptions = [];
+                try {
+                    if (q.options) {
+                        if (Array.isArray(q.options)) {
+                            rawOptions = q.options;
+                        } else if (typeof q.options === "object") {
+                            rawOptions = Object.values(q.options);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Options normalization error:", err);
+                    rawOptions = [];
+                }
+
+                const optionsToRender = rawOptions.map(opt => {
+                    if (typeof opt === "string") return opt;
+                    if (Array.isArray(opt)) return opt[0];
+                    if (typeof opt === "object" && opt !== null) {
+                        return opt.text || opt.value || Object.values(opt)[0];
+                    }
+                    return "";
+                });
+
+                panel.innerHTML = `
+                    <div style="padding: 10px;">
+                        <h3 class="mb-4" style="color: var(--primary);">Question ${displayIdx + 1}</h3>
+                        <p class="mb-4" style="font-size: 1.25rem; font-weight: 500; line-height: 1.4;">${escapeHTML(qText)}</p>
+                        <div class="options-list" style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
+                            ${optionsToRender.length > 0 ? optionsToRender.map((opt, optIdx) => {
+                    return `
+                                <div class="option-label" data-display="${displayIdx}" data-original="${originalIdx}" data-opt="${optIdx}"
+                                     style="display:flex; align-items:center; padding:15px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:12px; cursor:pointer; transition:all 0.2s;">
+                                    <div class="option-circle" style="width:20px; height:20px; border:2px solid var(--text-muted); border-radius:50%; margin-right:15px; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+                                        <div class="dot" style="width:10px; height:10px; background:var(--primary); border-radius:50%; opacity:0; transition:opacity 0.2s;"></div>
+                                    </div>
+                                    <span style="font-size: 1.05rem;">${escapeHTML(String(opt))}</span>
+                                </div>`;
+                }).join('') : `<div style="padding:20px; background:rgba(239,68,68,0.1); border:1px dashed var(--error); border-radius:12px; color:var(--error);">
+                                <strong>[!] Data Error:</strong> No options found. <br><small style="opacity:0.7;">Keys: ${escapeHTML(Object.keys(q).join(', '))}</small>
+                            </div>`}
+                        </div>
+                    </div>`;
+                qContainer.appendChild(panel);
+
+                panel.querySelectorAll('.option-label').forEach(label => {
+                    label.addEventListener('click', function () {
+                        const dIdx = parseInt(this.getAttribute('data-display'));
+                        const oIdx = parseInt(this.getAttribute('data-original'));
+                        const optIdx = parseInt(this.getAttribute('data-opt'));
+                        selectOption(dIdx, oIdx, optIdx, this);
+                    });
+                });
+
+                const dot = document.createElement('div');
+                dot.className = `nav-item ${displayIdx === 0 ? 'active' : ''}`;
+                dot.textContent = displayIdx + 1;
+                dot.onclick = () => jumpToQ(displayIdx);
+                navContainer.appendChild(dot);
+            });
+
+            function selectOption(displayIdx, originalIdx, optIdx, labelEl) {
+                answers[originalIdx] = optIdx;
+                const panel = document.getElementById(`q-panel-${displayIdx}`);
+                panel.querySelectorAll('.option-label').forEach(l => {
+                    l.style.background = 'rgba(255,255,255,0.05)';
+                    l.style.borderColor = 'rgba(255,255,255,0.1)';
+                    const circ = l.querySelector('.option-circle');
+                    const d = l.querySelector('.dot');
+                    if (circ) circ.style.borderColor = 'var(--text-muted)';
+                    if (d) d.style.opacity = '0';
+                });
+                labelEl.style.background = 'rgba(99, 102, 241, 0.15)';
+                labelEl.style.borderColor = 'var(--primary)';
+                const activeCirc = labelEl.querySelector('.option-circle');
+                const activeDot = labelEl.querySelector('.dot');
+                if (activeCirc) activeCirc.style.borderColor = 'var(--primary)';
+                if (activeDot) activeDot.style.opacity = '1';
+                updateNavStatus(displayIdx);
+            }
+
+            function updateNavStatus(displayIdx) {
+                const originalIdx = questionOrder[displayIdx];
+                const hasAnswer = answers.hasOwnProperty(originalIdx);
+                const isViewed = viewedQuestions.has(displayIdx);
+                const dot = navContainer.children[displayIdx];
+                if (!dot) return;
+                dot.classList.remove('answered', 'viewed');
+                if (hasAnswer) dot.classList.add('answered');
+                else if (isViewed) dot.classList.add('viewed');
+            }
+
+            let currentQIndex = 0;
+            window.jumpToQ = (index) => {
+                if (index < 0 || index >= questionOrder.length) return;
+                const prevActivePanel = document.getElementById(`q-panel-${currentQIndex}`);
+                if (prevActivePanel) prevActivePanel.classList.remove('active');
+                if (navContainer.children[currentQIndex]) navContainer.children[currentQIndex].classList.remove('active');
+                updateNavStatus(currentQIndex);
+                currentQIndex = index;
+                const currActivePanel = document.getElementById(`q-panel-${currentQIndex}`);
+                if (currActivePanel) currActivePanel.classList.add('active');
+                if (navContainer.children[currentQIndex]) navContainer.children[currentQIndex].classList.add('active');
+                viewedQuestions.add(currentQIndex);
+                updateNavStatus(currentQIndex);
+                updateControls();
+            };
+
+            window.changeQ = (dir) => jumpToQ(currentQIndex + dir);
+
+            function updateControls() {
+                const prevBtn = document.getElementById('prevBtn');
+                const nextBtn = document.getElementById('nextBtn');
+                prevBtn.disabled = currentQIndex === 0;
+                prevBtn.style.opacity = currentQIndex === 0 ? '0.5' : '1';
+                const isLast = currentQIndex === questionOrder.length - 1;
+                if (isLast) {
+                    nextBtn.textContent = 'Finish';
+                    nextBtn.onclick = () => submitTest(false);
+                } else {
+                    nextBtn.textContent = 'Next';
+                    nextBtn.onclick = () => changeQ(1);
+                }
+                document.getElementById('qProgress').textContent = `${currentQIndex + 1} / ${questionOrder.length}`;
+            }
+
+            window.submitTest = async function (force = false) {
+                if (!force && !confirm('Are you sure you want to finish the test?')) return;
+                if (timerInterval) clearInterval(timerInterval);
+                localStorage.removeItem(TIMER_KEY);
+                sessionStorage.removeItem(SHUFFLE_KEY);
+                let score = 0;
+                test.questions.forEach((q, originalIdx) => {
+                    if (answers[originalIdx] === q.correctIndex) score++;
+                });
+                const result = {
+                    testId: test.id,
+                    testTitle: test.title,
+                    studentRoll: user.roll,
+                    score,
+                    total: test.questions.length,
+                    timestamp: Date.now(),
+                    answers
+                };
+                saveResult(result);
+                if (window.saveResultToFirestore) await window.saveResultToFirestore(result);
+                window.location.href = `result.html?score=${score}&total=${test.questions.length}`;
+            };
+
+            viewedQuestions.add(0);
+            initTimer();
+            updateControls();
+            updateNavStatus(0);
+        }
+
+        try {
+            startTest();
+        } catch (err) {
+            console.error("Critical Student Page Error:", err);
+            alert("An error occurred while loading the test. Check console.");
+        }
+    </script>
+</body>
+
+</html>

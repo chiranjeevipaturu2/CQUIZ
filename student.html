@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student - CQUIZ</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container slide-up">
+        <header class="glass-card flex-between mb-4">
+            <div>
+                <h1>Student Dashboard</h1>
+                <p id="welcomeMsg">Ready to learn?</p>
+            </div>
+            <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+        </header>
+
+        <h3 class="mb-4">Available Tests</h3>
+        <div id="testGrid"
+            style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem;">
+            <!-- Test Cards -->
+        </div>
+
+        <h3 class="mt-4 mb-4">Past Results</h3>
+        <div class="glass-card">
+            <table class="glass-table">
+                <thead>
+                    <tr>
+                        <th>Test</th>
+                        <th>Score</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody id="historyTable"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+        import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBaA9KJKtszg7SPU3PJfil4vLg_ckZz6ys",
+            authDomain: "cquiz-7955e.firebaseapp.com",
+            projectId: "cquiz-7955e",
+            storageBucket: "cquiz-7955e.firebasestorage.app",
+            messagingSenderId: "931716478360",
+            appId: "1:931716478360:web:4f2a5406e42ee5a2ba27ed",
+            measurementId: "G-TM63LXHVHM"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const user = requireAuth('student');
+        document.getElementById('welcomeMsg').textContent = `Student: ${user.roll}`;
+
+        async function loadDashboard() {
+            let tests = [];
+            try {
+                const snapshot = await getDocs(collection(db, "tests"));
+                tests = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch (err) {
+                console.warn("Firestore fetch error, using local:", err);
+                tests = getTests();
+            }
+
+            const results = getResults().filter(r => r.studentRoll === user.roll);
+
+            // Render Tests
+            const grid = document.getElementById('testGrid');
+            if (tests.length) {
+                grid.innerHTML = tests.map(test => `
+                    <div class="glass-card flex-column" style="justify-content: space-between; height: 100%;">
+                        <div>
+                            <div class="badge badge-pink mb-2">Quiz</div>
+                            <h3 style="font-size: 1.25rem;">${test.title}</h3>
+                            <p class="text-muted">${test.questions.length} Questions</p>
+                            <p class="text-muted" style="font-size:0.8rem; margin-top:0.5rem;">By: ${test.createdBy}</p>
+                        </div>
+                        <button onclick="window.location.href='test.html?id=${test.id}'" class="btn btn-primary mt-4">Start Quiz</button>
+                    </div>
+                `).join('');
+            } else {
+                grid.innerHTML = '<p class="text-muted">No tests available right now.</p>';
+            }
+
+            // Render History
+            const hist = document.getElementById('historyTable');
+            hist.innerHTML = results.length ? results.map(r => `
+                <tr>
+                    <td>${r.testTitle}</td>
+                    <td><span class="badge ${r.score >= r.total / 2 ? 'badge-indigo' : 'badge-pink'}">${r.score}/${r.total}</span></td>
+                    <td>${formatDate(r.timestamp)}</td>
+                </tr>
+            `).reverse().join('') : '<tr><td colspan="3" class="text-center">No history yet.</td></tr>';
+        }
+
+        loadDashboard();
+    </script>
+</body>
+
+</html>

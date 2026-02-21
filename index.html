@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - CQUIZ</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body style="display: flex; align-items: center; justify-content: center;">
+
+    <!-- Decorative Background Shapes -->
+    <div
+        style="position: fixed; top: 10%; left: 10%; width: 300px; height: 300px; background: var(--primary); border-radius: 50%; filter: blur(100px); opacity: 0.4; animation: float 8s infinite;">
+    </div>
+    <div
+        style="position: fixed; bottom: 10%; right: 10%; width: 250px; height: 250px; background: var(--secondary); border-radius: 50%; filter: blur(100px); opacity: 0.3; animation: float 10s infinite reverse;">
+    </div>
+
+    <div class="glass-card slide-up" style="max-width: 420px; width: 90%; position: relative; z-index: 10;">
+        <div class="text-center mb-4">
+            <!-- Modern Icon SVG -->
+            <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round"
+                style="color: var(--primary); margin-bottom: 1rem; filter: drop-shadow(0 0 10px var(--primary-glow));">
+                <path
+                    d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z">
+                </path>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+            <h2
+                style="font-size: 2rem; margin-bottom: 0.5rem; background: linear-gradient(to right, #fff, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                CQUIZ</h2>
+            <p>Role-Based Assessment Platform</p>
+        </div>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label class="form-label">Roll Number</label>
+                <input type="text" id="rollNumber" class="form-control" placeholder="e.g. STU101" required>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" id="password" class="form-control" placeholder="••••" required>
+            </div>
+
+            <div id="errorMsg" class="mb-4 text-center" style="color: var(--error); display: none; font-size: 0.9rem;">
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+        </form>
+
+        <div class="mt-4 text-center" style="font-size: 0.8rem; color: rgba(255,255,255,0.3);">
+            <p>Demo Credentials:</p>
+            <p>Teacher: TCH001 / TC01</p>
+            <p>Student: STU101 / ST01</p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+    <script>
+        // Check Auth
+        const user = JSON.parse(sessionStorage.getItem(STORAGE_KEYS.USER));
+        if (user) {
+            window.location.href = user.role === 'teacher' ? 'teacher.html' : 'student.html';
+        }
+
+
+    </script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+        import { getFirestore, doc, getDoc, collection, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBaA9KJKtszg7SPU3PJfil4vLg_ckZz6ys",
+            authDomain: "cquiz-7955e.firebaseapp.com",
+            projectId: "cquiz-7955e",
+            storageBucket: "cquiz-7955e.firebasestorage.app",
+            messagingSenderId: "931716478360",
+            appId: "1:931716478360:web:4f2a5406e42ee5a2ba27ed",
+            measurementId: "G-TM63LXHVHM"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const handleLoginError = (message) => {
+            const err = document.getElementById('errorMsg');
+            err.textContent = message;
+            err.style.display = 'block';
+            const card = document.querySelector('.glass-card');
+            card.style.transform = 'translateX(10px)';
+            setTimeout(() => card.style.transform = 'translateX(-10px)', 100);
+            setTimeout(() => card.style.transform = 'translateY(0)', 200);
+        };
+
+        const executeLogin = (user) => {
+            sessionStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+            document.body.classList.add('fade-out');
+            setTimeout(() => {
+                window.location.href = user.role === 'teacher' ? 'teacher.html' : 'student.html';
+            }, 400);
+        };
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const roll = document.getElementById('rollNumber').value.trim();
+            const pass = document.getElementById('password').value.trim();
+
+            try {
+                // 1. Check Firebase Firestore
+                const userDoc = await getDoc(doc(db, "users", roll));
+
+                if (userDoc.exists()) {
+                    const userData = userDoc.data();
+                    if (userData.password === pass) {
+                        executeLogin({ roll: roll, role: userData.role });
+                    } else {
+                        handleLoginError('Incorrect Password');
+                    }
+                } else {
+                    // 2. Fallback to hardcoded users
+                    const res = login(roll, pass);
+                    if (res.success) {
+                        executeLogin(res.user);
+                    } else {
+                        handleLoginError(res.message);
+                    }
+                }
+            } catch (error) {
+                console.error("Firestore Error:", error);
+                // Fallback on error as well
+                const res = login(roll, pass);
+                if (res.success) {
+                    executeLogin(res.user);
+                } else {
+                    handleLoginError("Login Error / User not found");
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>

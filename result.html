@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Result - CQUIZ</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body style="display: flex; align-items: center; justify-content: center;">
+
+    <div class="glass-card text-center slide-up" style="max-width: 500px; width: 90%; padding: 3rem;">
+        <h1 class="mb-4">🎉 Completed!</h1>
+        <p class="text-muted mb-4">You have successfully submitted the test.</p>
+
+        <div
+            style="background: rgba(255,255,255,0.05); border-radius: 50%; width: 200px; height: 200px; display: flex; align-items: center; justify-content: center; margin: 0 auto; border: 4px solid var(--primary);">
+            <div class="flex-column">
+                <span id="scoreVal" style="font-size: 4rem; font-weight: 700; color: white;">0</span>
+                <span class="text-muted">OUT OF <span id="totalVal">0</span></span>
+            </div>
+        </div>
+
+        <p id="percentage" class="mt-4" style="font-size: 1.2rem; color: var(--secondary);">0%</p>
+
+        <a href="student.html" class="btn btn-primary btn-block mt-4">Return to Dashboard</a>
+    </div>
+
+    <script src="script.js"></script>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const score = parseInt(params.get('score'));
+        const total = parseInt(params.get('total'));
+
+        if (isNaN(score) || isNaN(total)) window.location.href = 'student.html';
+
+        document.getElementById('totalVal').textContent = total;
+
+        // Animated Counter
+        const scoreEl = document.getElementById('scoreVal');
+        const pctEl = document.getElementById('percentage');
+        let current = 0;
+
+        const interval = setInterval(() => {
+            if (current >= score) {
+                clearInterval(interval);
+                scoreEl.textContent = score; // Ensure strict match
+            } else {
+                current++;
+                scoreEl.textContent = current;
+            }
+        }, 100);
+
+        const pct = Math.round((score / total) * 100);
+        pctEl.textContent = `${pct}% Score`;
+
+        // Save particles for the celebration vibes (simple CSS addition in future)
+    </script>
+</body>
+
+</html>

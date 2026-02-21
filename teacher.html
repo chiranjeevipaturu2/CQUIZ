@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher - CQUIZ</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container slide-up">
+        <!-- Header -->
+        <header class="glass-card flex-between mb-4">
+            <div>
+                <h1 style="font-size: 1.5rem;">Teacher Dashboard</h1>
+                <p id="welcomeMsg" style="font-size: 0.9rem;">Welcome back</p>
+            </div>
+            <div style="display: flex; gap: 1rem;">
+                <button id="createTestBtn" class="btn btn-primary">+ Create New Test</button>
+                <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+            </div>
+        </header>
+
+        <!-- Analytics Cards -->
+        <div
+            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+            <div class="glass-card text-center">
+                <p class="text-muted">Total Submissions</p>
+                <h3 style="font-size: 2rem; color: var(--primary);" id="statAttempts">0</h3>
+            </div>
+            <div class="glass-card text-center">
+                <p class="text-muted">Avg. Score</p>
+                <h3 style="font-size: 2rem; color: var(--secondary);" id="statAvg">0%</h3>
+            </div>
+            <div class="glass-card text-center">
+                <p class="text-muted">Highest Score</p>
+                <h3 style="font-size: 2rem; color: var(--success);" id="statHigh">0%</h3>
+            </div>
+        </div>
+
+        <!-- My Created Tests Section REMOVED -->
+
+        <!-- AI Quiz Generator Section -->
+        <div class="glass-card mb-4" style="padding: 1.5rem;">
+            <h3 class="mb-3">✨ AI Quiz Generator</h3>
+            <div
+                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                <div class="form-group">
+                    <label class="form-label">Topic</label>
+                    <textarea id="aiTopic" class="form-control" rows="1"
+                        placeholder="Ex: Newton's Laws of Motion"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Difficulty</label>
+                    <select id="aiDifficulty" class="form-control"
+                        style="background: rgba(255,255,255,0.05); color: white; border: 1px solid rgba(255,255,255,0.1);">
+                        <option value="easy">Easy</option>
+                        <option value="medium">Medium</option>
+                        <option value="hard">Hard</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Question Type</label>
+                    <select id="aiType" class="form-control"
+                        style="background: rgba(255,255,255,0.05); color: white; border: 1px solid rgba(255,255,255,0.1);">
+                        <option value="mcq">Multiple Choice</option>
+                        <option value="truefalse">True/False</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Number of Questions (Max 100)</label>
+                    <input type="number" id="aiCount" class="form-control" min="1" max="100" value="5">
+                </div>
+            </div>
+            <button id="btnGenerateAI" class="btn btn-primary"
+                style="background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); border: none;">
+                Generate Quiz with AI 🤖
+            </button>
+
+            <!-- AI Results Area -->
+            <div id="aiResultsArea"
+                style="display: none; margin-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
+                <div class="flex-between mb-3">
+                    <h4>Generated Questions</h4>
+                    <div class="gap-2" style="display: flex;">
+                        <button id="btnSaveAI" class="btn btn-secondary">Save Quiz</button>
+                        <button id="btnPublishAI" class="btn btn-success">Publish Quiz</button>
+                    </div>
+                </div>
+                <div id="aiQuestionsList" style="max-height: 400px; overflow-y: auto;"></div>
+            </div>
+        </div>
+
+        <!-- Action Bar -->
+        <div class="flex-between mb-4">
+            <h3>Recent Submissions</h3>
+            <!-- Button moved to header -->
+        </div>
+
+        <!-- Results Table -->
+        <div class="glass-card" style="padding: 1rem;">
+            <div style="overflow-x: auto;">
+                <table class="glass-table">
+                    <thead>
+                        <tr>
+                            <th>Student</th>
+                            <th>Test Title</th>
+                            <th>Score</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsTable">
+                        <!-- Populated via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Test Modal -->
+    <div class="modal-overlay" id="testModal">
+        <div class="modal-content">
+            <h2 class="mb-4">Create New Test</h2>
+            <form id="createTestForm">
+                <div class="form-group">
+                    <label class="form-label">Test Title</label>
+                    <input type="text" id="testTitle" class="form-control" required
+                        placeholder="Ex: Mathematics Unit 1">
+                </div>
+
+                <div id="questionsWrapper">
+                    <!-- Questions appear here -->
+                </div>
+
+                <!-- Fix 2: Move Add Question Button Here -->
+                <div class="mb-4 text-center">
+                    <button type="button" id="addQBtn" class="btn btn-secondary"
+                        style="width: 100%; border-style: dashed; opacity: 0.7;">+ Add New Question</button>
+                </div>
+
+                <!-- Feature 1 & 2: Test Settings -->
+                <div class="glass-card mb-4" style="padding: 1.5rem; background: rgba(255,255,255,0.02);">
+                    <h4 class="mb-3">Test Settings</h4>
+
+                    <!-- Timer -->
+                    <div class="form-group">
+                        <label class="form-label">Test Duration (0 = Unlimited)</label>
+                        <div style="display: flex; gap: 1rem;">
+                            <div style="flex:1">
+                                <label style="font-size:0.8rem; color:var(--text-muted);">Hours</label>
+                                <input type="number" id="durHours" class="form-control" min="0" placeholder="0">
+                            </div>
+                            <div style="flex:1">
+                                <label style="font-size:0.8rem; color:var(--text-muted);">Minutes</label>
+                                <input type="number" id="durMins" class="form-control" min="0" max="59" placeholder="0">
+                            </div>
+                            <div style="flex:1">
+                                <label style="font-size:0.8rem; color:var(--text-muted);">Seconds</label>
+                                <input type="number" id="durSecs" class="form-control" min="0" max="59" placeholder="0">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Shuffle -->
+                    <div class="flex-between" style="justify-content: flex-start; gap: 1rem; align-items: center;">
+                        <input type="checkbox" id="shuffleToggle"
+                            style="width: 1.2rem; height: 1.2rem; cursor: pointer;">
+                        <label for="shuffleToggle"
+                            style="cursor: pointer; color: var(--text-main); font-weight: 500;">Shuffle Questions for
+                            Students</label>
+                    </div>
+
+                    <div class="flex-between mt-4">
+                        <!-- Removed Add Question from here -->
+                        <div class="gap-2" style="display: flex; width: 100%; justify-content: flex-end;">
+                            <button type="button" id="closeModalBtn" class="btn btn-secondary">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save Test</button>
+                        </div>
+                    </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Fix 5: View Test Details Modal -->
+    <div class="modal-overlay" id="viewTestModal">
+        <div class="modal-content">
+            <div class="flex-between mb-4">
+                <h2 id="viewTestTitle">Test Details</h2>
+                <button onclick="document.getElementById('viewTestModal').classList.remove('active')"
+                    style="background:none; border:none; color:white; font-size:1.5rem; cursor:pointer;">&times;</button>
+            </div>
+            <div id="viewQuestionsContainer">
+                <!-- Read only questions -->
+            </div>
+            <div class="mt-4 text-right">
+                <button onclick="document.getElementById('viewTestModal').classList.remove('active')"
+                    class="btn btn-primary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+        import { getFirestore, doc, setDoc, deleteDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBaA9KJKtszg7SPU3PJfil4vLg_ckZz6ys",
+            authDomain: "cquiz-7955e.firebaseapp.com",
+            projectId: "cquiz-7955e",
+            storageBucket: "cquiz-7955e.firebasestorage.app",
+            messagingSenderId: "931716478360",
+            appId: "1:931716478360:web:4f2a5406e42ee5a2ba27ed",
+            measurementId: "G-TM63LXHVHM"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // --- Firebase Globals ---
+        window.saveToFirestore = async (coll, id, data) => {
+            try {
+                await setDoc(doc(db, coll, id), data);
+            } catch (err) {
+                console.error("Firestore Save Error:", err);
+            }
+        };
+
+        window.deleteFromFirestore = async (coll, id) => {
+            try {
+                await deleteDoc(doc(db, coll, id));
+            } catch (err) {
+                console.error("Firestore Delete Error:", err);
+            }
+        };
+
+        window.deleteSubmissionsForTest = async (testId) => {
+            try {
+                const q = query(collection(db, "submissions"), where("testId", "==", testId));
+                const snapshot = await getDocs(q);
+                const deletePromises = snapshot.docs.map(docSnap => deleteDoc(docSnap.ref));
+                await Promise.all(deletePromises);
+            } catch (err) {
+                console.error("Firestore Submission Delete Error:", err);
+            }
+        };
+
+        // --- Dashboard Logic ---
+        const user = requireAuth('teacher');
+        document.getElementById('welcomeMsg').textContent = `Instructor: ${user.roll}`;
+
+        window.renderTeacherDashboard = async function () {
+            if (document.getElementById('viewTestModal') && document.getElementById('viewTestModal').classList.contains('active')) return;
+
+            // 1. Fetch Tests from Firestore + LocalStorage
+            let allTests = [];
+            try {
+                const q = query(collection(db, "tests"), where("createdBy", "==", user.roll));
+                const snapshot = await getDocs(q);
+                allTests = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch (err) {
+                console.warn("Firestore fetch error, using local:", err);
+                allTests = getTests().filter(t => t.createdBy === user.roll);
+            }
+
+            // 2. Render My Tests List
+            const myContainer = document.getElementById('myTestsContainer');
+            if (myContainer) {
+                const newTestsHTML = allTests.length ? allTests.map(t => {
+                    return `
+                    <div class="test-list-item">
+                        <div class="flex-between" style="width: 100%;">
+                            <div onclick="viewTest('${t.id}')" style="cursor: pointer; flex: 1;">
+                                <h4 style="margin:0; font-size:1rem;">${t.title}</h4>
+                                <span class="text-muted" style="font-size:0.85rem;">${t.questions.length} Questions | Status: Published</span>
+                            </div>
+                            <div class="gap-2" style="display: flex;">
+                                <button onclick="viewTest('${t.id}')" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 10px;">Details</button>
+                                <button onclick="deleteTest('${t.id}')" class="btn btn-danger" style="font-size: 0.75rem; padding: 4px 10px;">Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                `}).reverse().join('') : '<p class="text-center text-muted">No tests found in your profile.</p>';
+                if (myContainer.innerHTML !== newTestsHTML) myContainer.innerHTML = newTestsHTML;
+            }
+
+            // 3. Render Results Table (Keep local for now as results accumulate)
+            const results = getResults();
+            const stats = getAnalytics();
+            if (stats) {
+                document.getElementById('statAttempts').textContent = stats.totalAttempts;
+                document.getElementById('statAvg').textContent = '-';
+                document.getElementById('statHigh').textContent = '-';
+            }
+
+            const tbody = document.getElementById('resultsTable');
+            if (tbody) {
+                const newTableHTML = results.length ? results.map(r => `
+                    <tr>
+                        <td>${r.studentRoll}</td>
+                        <td>${r.testTitle}</td>
+                        <td><span class="badge ${r.score >= r.total / 2 ? 'badge-indigo' : 'badge-pink'}">${r.score}/${r.total}</span></td>
+                        <td style="font-size: 0.9rem; color: var(--text-muted);">${formatDate(r.timestamp)}</td>
+                    </tr>
+                `).reverse().join('') : '<tr><td colspan="4" class="text-center">No submissions yet.</td></tr>';
+                if (tbody.innerHTML !== newTableHTML) tbody.innerHTML = newTableHTML;
+            }
+        }
+
+        // Initialize and setup polling
+        renderTeacherDashboard();
+        setInterval(renderTeacherDashboard, 5000);
+
+        // --- Original Modal Logic ---
+        const modal = document.getElementById('testModal');
+        const qWrapper = document.getElementById('questionsWrapper');
+        let qCount = 0;
+
+        document.getElementById('createTestBtn').addEventListener('click', () => {
+            qWrapper.innerHTML = '';
+            qCount = 0;
+            addQuestion();
+            modal.classList.add('active');
+        });
+
+        document.getElementById('closeModalBtn').addEventListener('click', () => modal.classList.remove('active'));
+
+        function addQuestion() {
+            qCount++;
+            const qDiv = document.createElement('div');
+            qDiv.className = 'glass-card mb-4';
+            qDiv.style.padding = '1.5rem';
+            qDiv.setAttribute('data-qid', qCount);
+            qDiv.innerHTML = `
+                <div class="flex-between mb-2">
+                    <h4>Question ${qCount}</h4>
+                    <button type="button" class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;" onclick="this.parentElement.parentElement.remove()">Remove</button>
+                </div>
+                <div class="form-group">
+                    <input type="text" class="form-control q-text" placeholder="Question Text" required>
+                </div>
+                <div class="options-container"></div>
+                <button type="button" class="btn btn-secondary" style="font-size: 0.8rem;" onclick="addOption(this)">+ Add Option</button>
+            `;
+            qWrapper.appendChild(qDiv);
+            const addOptionBtn = qDiv.querySelector('button[onclick="addOption(this)"]');
+            addOption(addOptionBtn);
+            addOption(addOptionBtn);
+        }
+        window.addQuestion = addQuestion;
+
+        window.addOption = function (btn) {
+            const container = btn.previousElementSibling;
+            const currentOpts = container.children.length;
+            if (currentOpts >= 6) return alert('Max 6 options allowed');
+            const optDiv = document.createElement('div');
+            optDiv.className = 'flex-between gap-2 mb-2';
+            optDiv.innerHTML = `
+                <input type="radio" name="correct_q${btn.parentElement.getAttribute('data-qid')}" required>
+                <input type="text" class="form-control opt-text" placeholder="Option ${currentOpts + 1}" required>
+                ${currentOpts >= 2 ? `<button type="button" onclick="this.parentElement.remove()" style="background:none; border:none; color: var(--error); cursor:pointer;">&times;</button>` : ''}
+            `;
+            container.appendChild(optDiv);
+        }
+
+        document.getElementById('addQBtn').addEventListener('click', addQuestion);
+
+        document.getElementById('createTestForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const title = document.getElementById('testTitle').value;
+            const hours = parseInt(document.getElementById('durHours').value) || 0;
+            const mins = parseInt(document.getElementById('durMins').value) || 0;
+            const secs = parseInt(document.getElementById('durSecs').value) || 0;
+            const durationInSeconds = (hours * 3600) + (mins * 60) + secs;
+            const shuffleEnabled = document.getElementById('shuffleToggle').checked;
+            const qElements = qWrapper.querySelectorAll('.glass-card');
+            const questions = [];
+            qElements.forEach(qEl => {
+                const text = qEl.querySelector('.q-text').value;
+                const optDivs = qEl.querySelector('.options-container').querySelectorAll('.flex-between');
+                const options = [];
+                let correctIndex = -1;
+                optDivs.forEach((optDiv, idx) => {
+                    options.push(optDiv.querySelector('.opt-text').value);
+                    if (optDiv.querySelector('input[type="radio"]').checked) correctIndex = idx;
+                });
+                questions.push({ text, options, correctIndex });
+            });
+            saveTest({ title, questions, createdBy: user.roll, durationInSeconds, shuffleEnabled });
+            alert('Test Saved To System!');
+            modal.classList.remove('active');
+        });
+
+        // AI Logic
+        const btnGenerateAI = document.getElementById('btnGenerateAI');
+        if (btnGenerateAI) {
+            btnGenerateAI.addEventListener('click', async () => {
+                const topic = document.getElementById('aiTopic').value;
+                const difficulty = document.getElementById('aiDifficulty').value;
+                const type = document.getElementById('aiType').value;
+                const count = parseInt(document.getElementById('aiCount').value);
+                if (!topic || !count) return alert('Fill all AI fields');
+                btnGenerateAI.disabled = true;
+                btnGenerateAI.innerHTML = 'Generating...';
+                try {
+                    const res = await fetch('http://localhost:5000/api/generate-quiz', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ topic, numberOfQuestions: count, difficulty, questionType: type })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        window.aiGeneratedQuestions = data.data.questions;
+                        renderAIQuestions(window.aiGeneratedQuestions);
+                        document.getElementById('aiResultsArea').style.display = 'block';
+                    } else alert(data.message);
+                } catch (err) { alert('Backend not reachable'); }
+                finally { btnGenerateAI.disabled = false; btnGenerateAI.innerHTML = 'Generate AI 🤖'; }
+            });
+        }
+
+        function renderAIQuestions(questions) {
+            const list = document.getElementById('aiQuestionsList');
+            list.innerHTML = questions.map((q, i) => `
+                <div class="glass-card mb-2" style="padding: 1rem; background: rgba(255,255,255,0.02);">
+                    <p>${i + 1}. ${q.question}</p>
+                    <p style="font-size:0.8rem; color:var(--success);">Ans: ${q.correctAnswer}</p>
+                </div>
+            `).join('');
+        }
+
+        document.getElementById('btnSaveAI').onclick = () => {
+            const topic = document.getElementById('aiTopic').value;
+            const questions = window.aiGeneratedQuestions.map(q => ({
+                text: q.question,
+                options: q.options,
+                correctIndex: q.correctAnswer.charCodeAt(0) - 65
+            }));
+            saveTest({ title: "AI: " + topic, questions, createdBy: user.roll, durationInSeconds: 0, shuffleEnabled: false });
+            alert('AI Quiz Saved!');
+            document.getElementById('aiResultsArea').style.display = 'none';
+        };
+    </script>
+</body>
+
+</html>
