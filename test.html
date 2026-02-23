@@ -135,17 +135,12 @@
             const ExamLockdown = {
                 isActive: false,
                 examStarted: false,
-                violationCount: 0,
-                lastViolationTime: 0,
 
                 enable() {
+                    if (!this.examStarted) return;
                     if (this.isActive) return;
                     this.isActive = true;
-                    this.violationCount = 0;
-                    this.lastViolationTime = 0;
 
-                    window.addEventListener('blur', this.handleVisibilityChange);
-                    document.addEventListener('visibilitychange', this.handleVisibilityChange);
                     document.addEventListener('fullscreenchange', this.handleFullscreenChange);
                     window.addEventListener('keydown', this.handleKeydown, true);
                     document.addEventListener('contextmenu', this.handleContextMenu);
@@ -159,11 +154,6 @@
                 disable() {
                     this.isActive = false;
                     this.examStarted = false;
-                    if (document.fullscreenElement) {
-                        document.exitFullscreen().catch(() => { });
-                    }
-                    window.removeEventListener('blur', this.handleVisibilityChange);
-                    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
                     document.removeEventListener('fullscreenchange', this.handleFullscreenChange);
                     window.removeEventListener('keydown', this.handleKeydown, true);
                     document.removeEventListener('contextmenu', this.handleContextMenu);
@@ -174,103 +164,27 @@
                     document.body.style.webkitUserSelect = 'auto';
                 },
 
-                async enterFullscreen() {
-                    const elem = document.documentElement;
-                    try {
-                        if (elem.requestFullscreen) {
-                            await elem.requestFullscreen();
-                            return true;
-                        }
-                    } catch (err) {
-                        console.error(`Fullscreen request failed: ${err.message}`);
-                        alert("Fullscreen is required to start the exam.");
-                        return false;
-                    }
-                    return false;
-                },
-
                 handleFullscreenChange: () => {
                     if (!ExamLockdown.examStarted) return;
+
                     if (!document.fullscreenElement && ExamLockdown.isActive) {
-                        ExamLockdown.terminateQuiz("Quiz Terminated Due To Security Violation: Fullscreen Exited");
-                    }
-                },
-
-                handleVisibilityChange: () => {
-                    if (!ExamLockdown.examStarted) return;
-                    const now = Date.now();
-                    if (now - ExamLockdown.lastViolationTime < 2000) return;
-
-                    if (document.visibilityState === 'hidden' || document.hidden || !document.hasFocus()) {
-                        ExamLockdown.violationCount++;
-                        ExamLockdown.lastViolationTime = now;
-                        if (ExamLockdown.violationCount === 1) {
-                            alert("Warning: Do not switch tabs. Next attempt will terminate the quiz.");
-                        } else {
-                            ExamLockdown.terminateQuiz("Quiz Terminated Due To Security Violation: Tab Switch Detected");
-                        }
+                        alert("Since you have exited fullscreen, the test has been terminated.");
+                        submitTest(true);
                     }
                 },
 
                 handleKeydown: (e) => {
                     if (!ExamLockdown.examStarted) return;
                     const forbiddenKeys = ['c', 'v', 'x', 'a', 'u', 's', 'p'];
-                    const isCtrl = e.ctrlKey || e.metaKey;
-                    const isShift = e.shiftKey;
-                    const key = e.key.toLowerCase();
-                    if (isCtrl && forbiddenKeys.includes(key)) { e.preventDefault(); return false; }
-                    if (isCtrl && isShift && ['i', 'j', 'c'].includes(key)) { e.preventDefault(); return false; }
-                    if (['f11', 'f12'].includes(key)) { e.preventDefault(); return false; }
+                    if ((e.ctrlKey || e.metaKey) && forbiddenKeys.includes(e.key.toLowerCase())) { e.preventDefault(); return false; }
+                    if ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i', 'j', 'c'].includes(e.key.toLowerCase())) { e.preventDefault(); return false; }
+                    if (['f11', 'f12'].includes(e.key.toLowerCase())) { e.preventDefault(); return false; }
                 },
 
                 handleContextMenu: (e) => { if (ExamLockdown.examStarted) e.preventDefault(); },
                 handleSelectStart: (e) => { if (ExamLockdown.examStarted) e.preventDefault(); },
                 handleDragStart: (e) => { if (ExamLockdown.examStarted) e.preventDefault(); },
-
-                terminateQuiz(message) {
-                    this.disable();
-                    if (timerInterval) clearInterval(timerInterval);
-                    const container = document.querySelector('.container');
-                    if (container) {
-                        container.innerHTML = `
-                            <div class="glass-card text-center slide-up" style="margin: auto; padding: 3rem; max-width: 500px;">
-                                <div class="badge badge-pink mb-4">Security Violation</div>
-                                <h2 style="color: var(--error); margin-bottom: 1.5rem;">Terminated</h2>
-                                <p class="text-muted mb-4">${message}</p>
-                                <p class="text-muted mb-4">Your quiz session has been closed.</p>
-                                <button onclick="window.location.href='student.html'" class="btn btn-primary">Return to Dashboard</button>
-                            </div>
-                        `;
-                    }
-                }
             };
-
-            function showStartOverlay() {
-                const mainContainer = document.querySelector('.container');
-                if (mainContainer) mainContainer.style.opacity = '0';
-                const overlay = document.createElement('div');
-                overlay.id = 'examStartOverlay';
-                overlay.style = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 10, 15, 0.98); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(10px);";
-                overlay.innerHTML = `
-                    <div class="glass-card text-center slide-up" style="padding: 3rem; border: 1px solid rgba(255,255,255,0.1);">
-                        <h2 class="mb-4">Secure Exam</h2>
-                        <p class="text-muted mb-4" style="max-width: 400px;">Fullscreen mode is required. Switching tabs will terminate your session.</p>
-                        <button id="startExamFinalBtn" class="btn btn-primary btn-lg">Start Exam</button>
-                    </div>
-                `;
-                document.body.appendChild(overlay);
-                document.getElementById('startExamFinalBtn').onclick = async () => {
-                    const success = await ExamLockdown.enterFullscreen();
-                    if (success) {
-                        setTimeout(() => {
-                            overlay.remove();
-                            if (mainContainer) mainContainer.style.opacity = '1';
-                            ExamLockdown.enable();
-                            ExamLockdown.examStarted = true;
-                        }, 300);
-                    }
-                };
-            }
 
             const TIMER_KEY = `cquiz_start_${testId}_${user.roll}`;
             const SHUFFLE_KEY = `cquiz_order_${testId}_${user.roll}`;
@@ -458,10 +372,38 @@
                 window.location.href = `result.html?score=${score}&total=${test.questions.length}`;
             };
 
+            function showStartOverlay() {
+                const overlay = document.createElement('div');
+                overlay.style = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 10, 15, 0.98); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(10px);";
+                overlay.innerHTML = `
+                    <div class="glass-card text-center slide-up" style="padding: 3rem; max-width: 500px; border: 1px solid rgba(255,255,255,0.1);">
+                        <h2 class="mb-4">Exam Instructions</h2>
+                        <ul class="text-muted mb-4" style="text-align: left; list-style: none; padding: 0;">
+                            <li class="mb-2">• This test must be taken in Fullscreen Mode.</li>
+                            <li class="mb-2">• Exiting fullscreen even once will immediately terminate the test.</li>
+                            <li class="mb-2">• When time expires, test auto-submits instantly.</li>
+                        </ul>
+                        <button id="startExamBtn" class="btn btn-primary btn-lg">Start Exam in Fullscreen</button>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+
+                document.getElementById('startExamBtn').onclick = () => {
+                    const elem = document.documentElement;
+                    if (elem.requestFullscreen) {
+                        elem.requestFullscreen().catch(() => { });
+                    }
+                    overlay.remove();
+                    ExamLockdown.examStarted = true;
+                    ExamLockdown.enable();
+                    initTimer();
+                };
+            }
+
             viewedQuestions.add(0);
-            initTimer();
             updateControls();
             updateNavStatus(0);
+
             showStartOverlay();
         }
 
