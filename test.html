@@ -61,7 +61,7 @@
     <script src="script.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBaA9KJKtszg7SPU3PJfil4vLg_ckZz6ys",
@@ -94,18 +94,28 @@
             let test = null;
 
             try {
-                // Try Firestore first
+                // Feature 1: Limit attempts (Max 2)
+                const qSub = query(collection(db, "submissions"),
+                    where("studentRoll", "==", user.roll),
+                    where("testId", "==", testId));
+                const subSnapshot = await getDocs(qSub);
+
+                if (subSnapshot.size >= 2) {
+                    alert("You have already used your 2 attempts for this test.");
+                    window.location.href = 'student.html';
+                    return;
+                }
+
+                // Try Firestore for test data
                 const docSnap = await getDoc(doc(db, "tests", testId));
                 if (docSnap.exists()) {
                     test = { id: docSnap.id, ...docSnap.data() };
+                } else {
+                    test = getTests().find(t => t.id === testId);
                 }
             } catch (err) {
-                console.warn("Firestore fetch error, falling back to local:", err);
-            }
-
-            if (!test) {
-                const tests = getTests();
-                test = tests.find(t => t.id === testId);
+                console.error("Initialization Error:", err);
+                test = getTests().find(t => t.id === testId);
             }
 
             if (!test) {
@@ -383,54 +393,68 @@
                     .replace(/>/g, "&gt;");
             }
 
+            // Fisher-Yates shuffle
+            function shuffleArray(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+                return array;
+            }
+
             questionOrder.forEach((originalIdx, displayIdx) => {
                 const q = test.questions[originalIdx];
+
+                // --- OPTION SHUFFLING (Memory only) ---
+                let rawOptions = [];
+                try {
+                    if (q.options) {
+                        if (Array.isArray(q.options)) rawOptions = q.options;
+                        else if (typeof q.options === "object") rawOptions = Object.values(q.options);
+                    }
+                } catch (e) { rawOptions = []; }
+
+                // Map options to keep track of their original meaning
+                const normalizedOptions = rawOptions.map((opt, idx) => {
+                    let text = "";
+                    if (typeof opt === "string") text = opt;
+                    else if (Array.isArray(opt)) text = opt[0];
+                    else if (typeof opt === "object" && opt !== null) text = opt.text || opt.value || Object.values(opt)[0];
+                    return { text, originalIdx: idx };
+                });
+
+                // Correct answer tracking
+                const originalCorrectIdx = q.correctIndex;
+
+                // Perform Shuffle (Session unique)
+                const shuffledOptions = shuffleArray([...normalizedOptions]);
+
+                // Update correct index for THIS session's rendering
+                const newCorrectIdx = shuffledOptions.findIndex(o => o.originalIdx === originalCorrectIdx);
+                q.sessionCorrectIndex = newCorrectIdx; // Dynamic update for validation
+
                 const panel = document.createElement('div');
                 panel.className = `q-panel ${displayIdx === 0 ? 'active' : ''}`;
                 panel.id = `q-panel-${displayIdx}`;
 
                 const qText = q.question || q.text || q.questionText || `Question ${displayIdx + 1}`;
 
-                // --- SAFELY NORMALIZE OPTIONS ---
-                let rawOptions = [];
-                try {
-                    if (q.options) {
-                        if (Array.isArray(q.options)) {
-                            rawOptions = q.options;
-                        } else if (typeof q.options === "object") {
-                            rawOptions = Object.values(q.options);
-                        }
-                    }
-                } catch (err) {
-                    console.error("Options normalization error:", err);
-                    rawOptions = [];
-                }
-
-                const optionsToRender = rawOptions.map(opt => {
-                    if (typeof opt === "string") return opt;
-                    if (Array.isArray(opt)) return opt[0];
-                    if (typeof opt === "object" && opt !== null) {
-                        return opt.text || opt.value || Object.values(opt)[0];
-                    }
-                    return "";
-                });
-
                 panel.innerHTML = `
                     <div style="padding: 10px;">
                         <h3 class="mb-4" style="color: var(--primary);">Question ${displayIdx + 1}</h3>
-                        <p class="mb-4" style="font-size: 1.25rem; font-weight: 500; line-height: 1.4;">${escapeHTML(qText)}</p>
+                        <p class="mb-4" style="font-size: 1.25rem; font-weight: 500; line-height: 1.4;">${escapeHTML(q.question || q.text || q.questionText || `Question ${displayIdx + 1}`)}</p>
                         <div class="options-list" style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
-                            ${optionsToRender.length > 0 ? optionsToRender.map((opt, optIdx) => {
+                            ${shuffledOptions.length > 0 ? shuffledOptions.map((opt, optIdx) => {
                     return `
                                 <div class="option-label" data-display="${displayIdx}" data-original="${originalIdx}" data-opt="${optIdx}"
                                      style="display:flex; align-items:center; padding:15px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:12px; cursor:pointer; transition:all 0.2s;">
                                     <div class="option-circle" style="width:20px; height:20px; border:2px solid var(--text-muted); border-radius:50%; margin-right:15px; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
                                         <div class="dot" style="width:10px; height:10px; background:var(--primary); border-radius:50%; opacity:0; transition:opacity 0.2s;"></div>
                                     </div>
-                                    <span style="font-size: 1.05rem;">${escapeHTML(String(opt))}</span>
+                                    <span style="font-size: 1.05rem;">${escapeHTML(String(opt.text))}</span>
                                 </div>`;
                 }).join('') : `<div style="padding:20px; background:rgba(239,68,68,0.1); border:1px dashed var(--error); border-radius:12px; color:var(--error);">
-                                <strong>[!] Data Error:</strong> No options found. <br><small style="opacity:0.7;">Keys: ${escapeHTML(Object.keys(q).join(', '))}</small>
+                                <strong>[!] Data Error:</strong> No options found.
                             </div>`}
                         </div>
                     </div>`;
@@ -528,7 +552,8 @@
                 sessionStorage.removeItem(SHUFFLE_KEY);
                 let score = 0;
                 test.questions.forEach((q, originalIdx) => {
-                    if (answers[originalIdx] === q.correctIndex) score++;
+                    const correctIdx = q.sessionCorrectIndex !== undefined ? q.sessionCorrectIndex : q.correctIndex;
+                    if (answers[originalIdx] === correctIdx) score++;
                 });
                 const result = {
                     testId: test.id,
