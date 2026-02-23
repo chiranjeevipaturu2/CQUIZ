@@ -129,6 +129,121 @@
             const answers = {};
             const viewedQuestions = new Set();
             let timerInterval;
+
+            const ExamLockdown = {
+                isActive: false,
+                violationCount: 0,
+
+                enable() {
+                    if (this.isActive) return;
+                    this.isActive = true;
+                    this.violationCount = 0;
+
+                    this.enterFullscreen();
+
+                    window.addEventListener('blur', this.handleVisibilityChange);
+                    document.addEventListener('visibilitychange', this.handleVisibilityChange);
+                    document.addEventListener('fullscreenchange', this.handleFullscreenChange);
+                    window.addEventListener('keydown', this.handleKeydown, true);
+                    document.addEventListener('contextmenu', this.handleContextMenu);
+                    document.addEventListener('selectstart', this.handleSelectStart);
+
+                    document.body.style.userSelect = 'none';
+                    document.body.style.webkitUserSelect = 'none';
+                },
+
+                disable() {
+                    if (!this.isActive) return;
+                    this.isActive = false;
+
+                    if (document.fullscreenElement) {
+                        document.exitFullscreen().catch(() => { });
+                    }
+
+                    window.removeEventListener('blur', this.handleVisibilityChange);
+                    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+                    document.removeEventListener('fullscreenchange', this.handleFullscreenChange);
+                    window.removeEventListener('keydown', this.handleKeydown, true);
+                    document.removeEventListener('contextmenu', this.handleContextMenu);
+                    document.removeEventListener('selectstart', this.handleSelectStart);
+
+                    document.body.style.userSelect = 'auto';
+                    document.body.style.webkitUserSelect = 'auto';
+                },
+
+                enterFullscreen() {
+                    const elem = document.documentElement;
+                    if (elem.requestFullscreen) {
+                        elem.requestFullscreen().catch(err => {
+                            console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+                        });
+                    }
+                },
+
+                handleFullscreenChange: () => {
+                    if (!document.fullscreenElement && ExamLockdown.isActive) {
+                        ExamLockdown.terminateQuiz("Quiz Terminated Due To Security Violation");
+                    }
+                },
+
+                handleVisibilityChange: () => {
+                    if (document.visibilityState === 'hidden' || document.hidden) {
+                        ExamLockdown.violationCount++;
+                        if (ExamLockdown.violationCount === 1) {
+                            alert("Warning: Do not switch tabs. Next attempt will terminate the quiz.");
+                        } else {
+                            ExamLockdown.terminateQuiz("Quiz Terminated Due To Security Violation");
+                        }
+                    }
+                },
+
+                handleKeydown: (e) => {
+                    const forbiddenKeys = ['c', 'v', 'x', 'a', 'u', 's', 'p'];
+                    const isCtrl = e.ctrlKey || e.metaKey;
+                    const isShift = e.shiftKey;
+                    const key = e.key.toLowerCase();
+
+                    if (isCtrl && forbiddenKeys.includes(key)) {
+                        e.preventDefault();
+                        return false;
+                    }
+                    if (isCtrl && isShift && ['i', 'j', 'c'].includes(key)) {
+                        e.preventDefault();
+                        return false;
+                    }
+                    if (['f11', 'f12'].includes(key)) {
+                        e.preventDefault();
+                        return false;
+                    }
+                },
+
+                handleContextMenu: (e) => {
+                    e.preventDefault();
+                    return false;
+                },
+
+                handleSelectStart: (e) => {
+                    e.preventDefault();
+                    return false;
+                },
+
+                terminateQuiz(message) {
+                    this.disable();
+                    if (timerInterval) clearInterval(timerInterval);
+                    const container = document.querySelector('.container');
+                    if (container) {
+                        container.innerHTML = `
+                            <div class="glass-card text-center slide-up" style="margin: auto; padding: 3rem; max-width: 500px;">
+                                <div class="badge badge-pink mb-4">Security Violation</div>
+                                <h2 style="color: var(--error); margin-bottom: 1.5rem;">${message}</h2>
+                                <p class="text-muted mb-4">Your quiz session has been terminated for security reasons.</p>
+                                <button onclick="window.location.href='student.html'" class="btn btn-primary">Return to Dashboard</button>
+                            </div>
+                        `;
+                    }
+                }
+            };
+
             const TIMER_KEY = `cquiz_start_${testId}_${user.roll}`;
             const SHUFFLE_KEY = `cquiz_order_${testId}_${user.roll}`;
 
@@ -333,6 +448,10 @@
 
             window.submitTest = async function (force = false) {
                 if (!force && !confirm('Are you sure you want to finish the test?')) return;
+
+                // Exit lockdown before redirecting or showing results
+                ExamLockdown.disable();
+
                 if (timerInterval) clearInterval(timerInterval);
                 localStorage.removeItem(TIMER_KEY);
                 sessionStorage.removeItem(SHUFFLE_KEY);
@@ -358,6 +477,9 @@
             initTimer();
             updateControls();
             updateNavStatus(0);
+
+            // Enable Security Lockdown
+            ExamLockdown.enable();
         }
 
         try {
