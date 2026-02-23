@@ -61,7 +61,7 @@
     <script src="script.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBaA9KJKtszg7SPU3PJfil4vLg_ckZz6ys",
@@ -92,6 +92,8 @@
             const testId = params.get('id');
 
             let test = null;
+
+            // 1) Any number of attempts allowed (Attempt limit check removed as requested)
 
             try {
                 // Try Firestore first
@@ -142,10 +144,8 @@
                     this.violationCount = 0;
                     this.lastViolationTime = 0;
 
-                    // Listeners are added but will return early if !examStarted
                     window.addEventListener('blur', this.handleVisibilityChange);
                     document.addEventListener('visibilitychange', this.handleVisibilityChange);
-
                     document.addEventListener('fullscreenchange', this.handleFullscreenChange);
                     window.addEventListener('keydown', this.handleKeydown, true);
                     document.addEventListener('contextmenu', this.handleContextMenu);
@@ -159,11 +159,9 @@
                 disable() {
                     this.isActive = false;
                     this.examStarted = false;
-
                     if (document.fullscreenElement) {
                         document.exitFullscreen().catch(() => { });
                     }
-
                     window.removeEventListener('blur', this.handleVisibilityChange);
                     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
                     document.removeEventListener('fullscreenchange', this.handleFullscreenChange);
@@ -200,15 +198,12 @@
 
                 handleVisibilityChange: () => {
                     if (!ExamLockdown.examStarted) return;
-
                     const now = Date.now();
-                    // Debounce strike system: max 1 violation per 2 seconds
                     if (now - ExamLockdown.lastViolationTime < 2000) return;
 
                     if (document.visibilityState === 'hidden' || document.hidden || !document.hasFocus()) {
                         ExamLockdown.violationCount++;
                         ExamLockdown.lastViolationTime = now;
-
                         if (ExamLockdown.violationCount === 1) {
                             alert("Warning: Do not switch tabs. Next attempt will terminate the quiz.");
                         } else {
@@ -223,41 +218,14 @@
                     const isCtrl = e.ctrlKey || e.metaKey;
                     const isShift = e.shiftKey;
                     const key = e.key.toLowerCase();
-
-                    // Block common shortcuts
-                    if (isCtrl && forbiddenKeys.includes(key)) {
-                        e.preventDefault();
-                        return false;
-                    }
-                    // Block DevTools & Inspection shortcuts
-                    if (isCtrl && isShift && ['i', 'j', 'c'].includes(key)) {
-                        e.preventDefault();
-                        return false;
-                    }
-                    // Block F11/F12
-                    if (['f11', 'f12'].includes(key)) {
-                        e.preventDefault();
-                        return false;
-                    }
+                    if (isCtrl && forbiddenKeys.includes(key)) { e.preventDefault(); return false; }
+                    if (isCtrl && isShift && ['i', 'j', 'c'].includes(key)) { e.preventDefault(); return false; }
+                    if (['f11', 'f12'].includes(key)) { e.preventDefault(); return false; }
                 },
 
-                handleContextMenu: (e) => {
-                    if (!ExamLockdown.examStarted) return;
-                    e.preventDefault();
-                    return false;
-                },
-
-                handleSelectStart: (e) => {
-                    if (!ExamLockdown.examStarted) return;
-                    e.preventDefault();
-                    return false;
-                },
-
-                handleDragStart: (e) => {
-                    if (!ExamLockdown.examStarted) return;
-                    e.preventDefault();
-                    return false;
-                },
+                handleContextMenu: (e) => { if (ExamLockdown.examStarted) e.preventDefault(); },
+                handleSelectStart: (e) => { if (ExamLockdown.examStarted) e.preventDefault(); },
+                handleDragStart: (e) => { if (ExamLockdown.examStarted) e.preventDefault(); },
 
                 terminateQuiz(message) {
                     this.disable();
@@ -278,33 +246,22 @@
             };
 
             function showStartOverlay() {
-                // Ensure main container is hidden until exam starts
                 const mainContainer = document.querySelector('.container');
                 if (mainContainer) mainContainer.style.opacity = '0';
-
                 const overlay = document.createElement('div');
                 overlay.id = 'examStartOverlay';
-                overlay.style = `
-                    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                    background: rgba(10, 10, 15, 0.98); z-index: 9999;
-                    display: flex; flex-direction: column; align-items: center; justify-content: center;
-                    backdrop-filter: blur(10px);
-                `;
+                overlay.style = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 10, 15, 0.98); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(10px);";
                 overlay.innerHTML = `
                     <div class="glass-card text-center slide-up" style="padding: 3rem; border: 1px solid rgba(255,255,255,0.1);">
                         <h2 class="mb-4">Secure Exam</h2>
-                        <p class="text-muted mb-4" style="max-width: 400px;">
-                            Fullscreen mode is required. Switching tabs will terminate your session.
-                        </p>
+                        <p class="text-muted mb-4" style="max-width: 400px;">Fullscreen mode is required. Switching tabs will terminate your session.</p>
                         <button id="startExamFinalBtn" class="btn btn-primary btn-lg">Start Exam</button>
                     </div>
                 `;
                 document.body.appendChild(overlay);
-
                 document.getElementById('startExamFinalBtn').onclick = async () => {
                     const success = await ExamLockdown.enterFullscreen();
                     if (success) {
-                        // Activate security delay to allow browser to stabilize
                         setTimeout(() => {
                             overlay.remove();
                             if (mainContainer) mainContainer.style.opacity = '1';
@@ -318,7 +275,6 @@
             const TIMER_KEY = `cquiz_start_${testId}_${user.roll}`;
             const SHUFFLE_KEY = `cquiz_order_${testId}_${user.roll}`;
 
-            // --- Shuffling logic ---
             let questionOrder = [];
             if (test.shuffleEnabled) {
                 const savedOrder = JSON.parse(sessionStorage.getItem(SHUFFLE_KEY));
@@ -332,9 +288,7 @@
                     }
                     sessionStorage.setItem(SHUFFLE_KEY, JSON.stringify(questionOrder));
                 }
-            } else {
-                questionOrder = test.questions.map((_, i) => i);
-            }
+            } else { questionOrder = test.questions.map((_, i) => i); }
 
             function initTimer() {
                 if (!test.durationInSeconds || test.durationInSeconds <= 0) return;
@@ -342,25 +296,20 @@
                 timerDisplay.style.display = 'inline-block';
                 timerDisplay.style.position = 'static';
                 timerDisplay.style.marginRight = '1rem';
-
                 const submitBtn = document.querySelector('button[onclick="submitTest()"]');
                 if (submitBtn) submitBtn.parentElement.insertBefore(timerDisplay, submitBtn);
 
                 let startTime = localStorage.getItem(TIMER_KEY);
-                if (!startTime) {
-                    startTime = Date.now();
-                    localStorage.setItem(TIMER_KEY, startTime);
-                } else { startTime = parseInt(startTime); }
+                if (!startTime) { startTime = Date.now(); localStorage.setItem(TIMER_KEY, startTime); }
+                else { startTime = parseInt(startTime); }
 
                 const endTime = startTime + (test.durationInSeconds * 1000);
-
                 function updateTimer() {
-                    const now = Date.now();
-                    const diff = endTime - now;
+                    const diff = endTime - Date.now();
                     if (diff <= 0) {
                         timerDisplay.textContent = "00:00:00";
                         if (timerInterval) clearInterval(timerInterval);
-                        submitTest(true); // Auto-submit without confirmation
+                        submitTest(true);
                         return;
                     }
                     const h = Math.floor(diff / 3600000);
@@ -377,74 +326,60 @@
 
             function escapeHTML(str) {
                 if (typeof str !== "string") return "";
-                return str
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;");
+                return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            }
+
+            function shuffleArray(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+                return array;
             }
 
             questionOrder.forEach((originalIdx, displayIdx) => {
                 const q = test.questions[originalIdx];
+                let rawOptions = [];
+                try {
+                    if (q.options) {
+                        if (Array.isArray(q.options)) rawOptions = [...q.options];
+                        else if (typeof q.options === "object") rawOptions = Object.values(q.options);
+                    }
+                } catch (e) { rawOptions = []; }
+
+                const mappedOptions = rawOptions.map((opt, idx) => ({ text: opt, originalIdx: idx }));
+                const shuffled = shuffleArray([...mappedOptions]);
+                q.sessionCorrectIndex = shuffled.findIndex(o => o.originalIdx === q.correctIndex);
+
                 const panel = document.createElement('div');
                 panel.className = `q-panel ${displayIdx === 0 ? 'active' : ''}`;
                 panel.id = `q-panel-${displayIdx}`;
 
                 const qText = q.question || q.text || q.questionText || `Question ${displayIdx + 1}`;
-
-                // --- SAFELY NORMALIZE OPTIONS ---
-                let rawOptions = [];
-                try {
-                    if (q.options) {
-                        if (Array.isArray(q.options)) {
-                            rawOptions = q.options;
-                        } else if (typeof q.options === "object") {
-                            rawOptions = Object.values(q.options);
-                        }
-                    }
-                } catch (err) {
-                    console.error("Options normalization error:", err);
-                    rawOptions = [];
-                }
-
-                const optionsToRender = rawOptions.map(opt => {
-                    if (typeof opt === "string") return opt;
-                    if (Array.isArray(opt)) return opt[0];
-                    if (typeof opt === "object" && opt !== null) {
-                        return opt.text || opt.value || Object.values(opt)[0];
-                    }
-                    return "";
-                });
-
                 panel.innerHTML = `
                     <div style="padding: 10px;">
                         <h3 class="mb-4" style="color: var(--primary);">Question ${displayIdx + 1}</h3>
                         <p class="mb-4" style="font-size: 1.25rem; font-weight: 500; line-height: 1.4;">${escapeHTML(qText)}</p>
                         <div class="options-list" style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
-                            ${optionsToRender.length > 0 ? optionsToRender.map((opt, optIdx) => {
+                            ${shuffled.length > 0 ? shuffled.map((opt, optIdx) => {
+                    const optText = (typeof opt.text === 'object' && opt.text !== null) ? (opt.text.text || opt.text.value || Object.values(opt.text)[0]) : opt.text;
                     return `
                                 <div class="option-label" data-display="${displayIdx}" data-original="${originalIdx}" data-opt="${optIdx}"
                                      style="display:flex; align-items:center; padding:15px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:12px; cursor:pointer; transition:all 0.2s;">
                                     <div class="option-circle" style="width:20px; height:20px; border:2px solid var(--text-muted); border-radius:50%; margin-right:15px; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
                                         <div class="dot" style="width:10px; height:10px; background:var(--primary); border-radius:50%; opacity:0; transition:opacity 0.2s;"></div>
                                     </div>
-                                    <span style="font-size: 1.05rem;">${escapeHTML(String(opt))}</span>
+                                    <span style="font-size: 1.05rem;">${escapeHTML(String(optText))}</span>
                                 </div>`;
-                }).join('') : `<div style="padding:20px; background:rgba(239,68,68,0.1); border:1px dashed var(--error); border-radius:12px; color:var(--error);">
-                                <strong>[!] Data Error:</strong> No options found. <br><small style="opacity:0.7;">Keys: ${escapeHTML(Object.keys(q).join(', '))}</small>
-                            </div>`}
+                }).join('') : `<div style="padding:20px; background:rgba(239,68,68,0.1); border:1px dashed var(--error); border-radius:12px; color:var(--error);"><strong>[!] Data Error:</strong> No options found.</div>`}
                         </div>
                     </div>`;
                 qContainer.appendChild(panel);
-
                 panel.querySelectorAll('.option-label').forEach(label => {
                     label.addEventListener('click', function () {
-                        const dIdx = parseInt(this.getAttribute('data-display'));
-                        const oIdx = parseInt(this.getAttribute('data-original'));
-                        const optIdx = parseInt(this.getAttribute('data-opt'));
-                        selectOption(dIdx, oIdx, optIdx, this);
+                        selectOption(parseInt(this.getAttribute('data-display')), parseInt(this.getAttribute('data-original')), parseInt(this.getAttribute('data-opt')), this);
                     });
                 });
-
                 const dot = document.createElement('div');
                 dot.className = `nav-item ${displayIdx === 0 ? 'active' : ''}`;
                 dot.textContent = displayIdx + 1;
@@ -458,15 +393,13 @@
                 panel.querySelectorAll('.option-label').forEach(l => {
                     l.style.background = 'rgba(255,255,255,0.05)';
                     l.style.borderColor = 'rgba(255,255,255,0.1)';
-                    const circ = l.querySelector('.option-circle');
-                    const d = l.querySelector('.dot');
+                    const circ = l.querySelector('.option-circle'), d = l.querySelector('.dot');
                     if (circ) circ.style.borderColor = 'var(--text-muted)';
                     if (d) d.style.opacity = '0';
                 });
                 labelEl.style.background = 'rgba(99, 102, 241, 0.15)';
                 labelEl.style.borderColor = 'var(--primary)';
-                const activeCirc = labelEl.querySelector('.option-circle');
-                const activeDot = labelEl.querySelector('.dot');
+                const activeCirc = labelEl.querySelector('.option-circle'), activeDot = labelEl.querySelector('.dot');
                 if (activeCirc) activeCirc.style.borderColor = 'var(--primary)';
                 if (activeDot) activeDot.style.opacity = '1';
                 updateNavStatus(displayIdx);
@@ -474,25 +407,23 @@
 
             function updateNavStatus(displayIdx) {
                 const originalIdx = questionOrder[displayIdx];
-                const hasAnswer = answers.hasOwnProperty(originalIdx);
-                const isViewed = viewedQuestions.has(displayIdx);
                 const dot = navContainer.children[displayIdx];
                 if (!dot) return;
                 dot.classList.remove('answered', 'viewed');
-                if (hasAnswer) dot.classList.add('answered');
-                else if (isViewed) dot.classList.add('viewed');
+                if (answers.hasOwnProperty(originalIdx)) dot.classList.add('answered');
+                else if (viewedQuestions.has(displayIdx)) dot.classList.add('viewed');
             }
 
             let currentQIndex = 0;
             window.jumpToQ = (index) => {
                 if (index < 0 || index >= questionOrder.length) return;
-                const prevActivePanel = document.getElementById(`q-panel-${currentQIndex}`);
-                if (prevActivePanel) prevActivePanel.classList.remove('active');
+                const prev = document.getElementById(`q-panel-${currentQIndex}`);
+                if (prev) prev.classList.remove('active');
                 if (navContainer.children[currentQIndex]) navContainer.children[currentQIndex].classList.remove('active');
                 updateNavStatus(currentQIndex);
                 currentQIndex = index;
-                const currActivePanel = document.getElementById(`q-panel-${currentQIndex}`);
-                if (currActivePanel) currActivePanel.classList.add('active');
+                const curr = document.getElementById(`q-panel-${currentQIndex}`);
+                if (curr) curr.classList.add('active');
                 if (navContainer.children[currentQIndex]) navContainer.children[currentQIndex].classList.add('active');
                 viewedQuestions.add(currentQIndex);
                 updateNavStatus(currentQIndex);
@@ -500,45 +431,28 @@
             };
 
             window.changeQ = (dir) => jumpToQ(currentQIndex + dir);
-
             function updateControls() {
-                const prevBtn = document.getElementById('prevBtn');
-                const nextBtn = document.getElementById('nextBtn');
+                const prevBtn = document.getElementById('prevBtn'), nextBtn = document.getElementById('nextBtn');
                 prevBtn.disabled = currentQIndex === 0;
                 prevBtn.style.opacity = currentQIndex === 0 ? '0.5' : '1';
                 const isLast = currentQIndex === questionOrder.length - 1;
-                if (isLast) {
-                    nextBtn.textContent = 'Finish';
-                    nextBtn.onclick = () => submitTest(false);
-                } else {
-                    nextBtn.textContent = 'Next';
-                    nextBtn.onclick = () => changeQ(1);
-                }
+                if (isLast) { nextBtn.textContent = 'Finish'; nextBtn.onclick = () => submitTest(false); }
+                else { nextBtn.textContent = 'Next'; nextBtn.onclick = () => changeQ(1); }
                 document.getElementById('qProgress').textContent = `${currentQIndex + 1} / ${questionOrder.length}`;
             }
 
             window.submitTest = async function (force = false) {
                 if (!force && !confirm('Are you sure you want to finish the test?')) return;
-
-                // Exit lockdown before redirecting or showing results
                 ExamLockdown.disable();
-
                 if (timerInterval) clearInterval(timerInterval);
                 localStorage.removeItem(TIMER_KEY);
                 sessionStorage.removeItem(SHUFFLE_KEY);
                 let score = 0;
                 test.questions.forEach((q, originalIdx) => {
-                    if (answers[originalIdx] === q.correctIndex) score++;
+                    const cIdx = q.sessionCorrectIndex !== undefined ? q.sessionCorrectIndex : q.correctIndex;
+                    if (answers[originalIdx] === cIdx) score++;
                 });
-                const result = {
-                    testId: test.id,
-                    testTitle: test.title,
-                    studentRoll: user.roll,
-                    score,
-                    total: test.questions.length,
-                    timestamp: Date.now(),
-                    answers
-                };
+                const result = { testId: test.id, testTitle: test.title, studentRoll: user.roll, score, total: test.questions.length, timestamp: Date.now(), answers };
                 saveResult(result);
                 if (window.saveResultToFirestore) await window.saveResultToFirestore(result);
                 window.location.href = `result.html?score=${score}&total=${test.questions.length}`;
@@ -548,8 +462,6 @@
             initTimer();
             updateControls();
             updateNavStatus(0);
-
-            // Trigger Start Overlay (Gesture-based Fullscreen)
             showStartOverlay();
         }
 
