@@ -19,6 +19,21 @@
             <button id="logoutBtn" class="btn btn-secondary">Logout</button>
         </header>
 
+        <!-- Confirmation Modal -->
+        <div id="confirmModal" class="overlay"
+            style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(5px);">
+            <div class="glass-card text-center slide-up"
+                style="padding: 2.5rem; max-width: 450px; border: 1px solid rgba(255,255,255,0.1);">
+                <h2 class="mb-4">Fullscreen Mode Required</h2>
+                <p class="text-muted mb-4">This test requires strict fullscreen mode. You cannot switch tabs or minimize
+                    the window once started.</p>
+                <div class="flex-between" style="gap: 1rem;">
+                    <button onclick="closeModal()" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+                    <button id="confirmStartBtn" class="btn btn-primary" style="flex: 1;">Continue</button>
+                </div>
+            </div>
+        </div>
+
         <h3 class="mb-4">Available Tests</h3>
         <div id="testGrid"
             style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem;">
@@ -45,21 +60,25 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
         import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyBaA9KJKtszg7SPU3PJfil4vLg_ckZz6ys",
-            authDomain: "cquiz-7955e.firebaseapp.com",
-            projectId: "cquiz-7955e",
-            storageBucket: "cquiz-7955e.firebasestorage.app",
-            messagingSenderId: "931716478360",
-            appId: "1:931716478360:web:4f2a5406e42ee5a2ba27ed",
-            measurementId: "G-TM63LXHVHM"
-        };
+        // ... firebaseConfig ...
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
         const user = requireAuth('student');
         document.getElementById('welcomeMsg').textContent = `Student: ${user.roll}`;
+
+        window.showConfirmModal = (testId) => {
+            const modal = document.getElementById('confirmModal');
+            modal.style.display = 'flex';
+            document.getElementById('confirmStartBtn').onclick = () => {
+                window.location.href = `test.html?id=${testId}`;
+            };
+        };
+
+        window.closeModal = () => {
+            document.getElementById('confirmModal').style.display = 'none';
+        };
 
         async function loadDashboard() {
             let tests = [];
@@ -84,7 +103,7 @@
                             <p class="text-muted">${test.questions.length} Questions</p>
                             <p class="text-muted" style="font-size:0.8rem; margin-top:0.5rem;">By: ${test.createdBy}</p>
                         </div>
-                        <button onclick="window.location.href='test.html?id=${test.id}'" class="btn btn-primary mt-4">Start Quiz</button>
+                        <button onclick="showConfirmModal('${test.id}')" class="btn btn-primary mt-4">Start Quiz</button>
                     </div>
                 `).join('');
             } else {
