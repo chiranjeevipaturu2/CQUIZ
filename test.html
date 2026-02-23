@@ -133,13 +133,13 @@
             const ExamLockdown = {
                 isActive: false,
                 violationCount: 0,
+                lastViolationTime: 0,
 
                 enable() {
                     if (this.isActive) return;
                     this.isActive = true;
                     this.violationCount = 0;
-
-                    this.enterFullscreen();
+                    this.lastViolationTime = 0;
 
                     // Dual triggers for tab switch detection
                     window.addEventListener('blur', this.handleVisibilityChange);
@@ -175,25 +175,38 @@
                     document.body.style.webkitUserSelect = 'auto';
                 },
 
-                enterFullscreen() {
+                async enterFullscreen() {
                     const elem = document.documentElement;
-                    if (elem.requestFullscreen) {
-                        elem.requestFullscreen().catch(err => {
-                            console.error(`Error attempting to enable full-screen mode: ${err.message}`);
-                        });
+                    try {
+                        if (elem.requestFullscreen) {
+                            await elem.requestFullscreen();
+                            return true;
+                        }
+                    } catch (err) {
+                        console.error(`Fullscreen request failed: ${err.message}`);
+                        alert("Fullscreen is required to start the exam.");
+                        return false;
                     }
+                    return false;
                 },
 
                 handleFullscreenChange: () => {
                     if (!document.fullscreenElement && ExamLockdown.isActive) {
-                        ExamLockdown.terminateQuiz("Quiz Terminated Due To Security Violation");
+                        ExamLockdown.terminateQuiz("Quiz Terminated Due To Security Violation: Fullscreen Exited");
                     }
                 },
 
                 handleVisibilityChange: () => {
                     if (!ExamLockdown.isActive) return;
+
+                    const now = Date.now();
+                    // Debounce: Count violation only once per 2 seconds to avoid blur/visibility double-count
+                    if (now - ExamLockdown.lastViolationTime < 2000) return;
+
                     if (document.visibilityState === 'hidden' || document.hidden || !document.hasFocus()) {
                         ExamLockdown.violationCount++;
+                        ExamLockdown.lastViolationTime = now;
+
                         if (ExamLockdown.violationCount === 1) {
                             alert("Warning: Do not switch tabs. Next attempt will terminate the quiz.");
                         } else {
@@ -213,7 +226,7 @@
                         e.preventDefault();
                         return false;
                     }
-                    // Block DevTools shortcuts
+                    // Block DevTools & Inspection shortcuts
                     if (isCtrl && isShift && ['i', 'j', 'c'].includes(key)) {
                         e.preventDefault();
                         return false;
@@ -258,6 +271,10 @@
             };
 
             function showStartOverlay() {
+                // Ensure main container is hidden until exam starts
+                const mainContainer = document.querySelector('.container');
+                if (mainContainer) mainContainer.style.opacity = '0';
+
                 const overlay = document.createElement('div');
                 overlay.id = 'examStartOverlay';
                 overlay.style = `
@@ -270,16 +287,20 @@
                     <div class="glass-card text-center slide-up" style="padding: 3rem; border: 1px solid rgba(255,255,255,0.1);">
                         <h2 class="mb-4">Strict Exam Lockdown</h2>
                         <p class="text-muted mb-4" style="max-width: 400px;">
-                            This exam requires full-screen mode. Switching tabs or exiting fullscreen will terminate your session.
+                            This test must be taken in full screen mode. Switching tabs or exiting fullscreen will terminate your session.
                         </p>
                         <button id="startExamFinalBtn" class="btn btn-primary btn-lg">Start Exam</button>
                     </div>
                 `;
                 document.body.appendChild(overlay);
 
-                document.getElementById('startExamFinalBtn').onclick = () => {
-                    overlay.remove();
-                    ExamLockdown.enable();
+                document.getElementById('startExamFinalBtn').onclick = async () => {
+                    const success = await ExamLockdown.enterFullscreen();
+                    if (success) {
+                        overlay.remove();
+                        if (mainContainer) mainContainer.style.opacity = '1';
+                        ExamLockdown.enable();
+                    }
                 };
             }
 
@@ -327,8 +348,8 @@
                     const diff = endTime - now;
                     if (diff <= 0) {
                         timerDisplay.textContent = "00:00:00";
-                        clearInterval(timerInterval);
-                        submitTest(true);
+                        if (timerInterval) clearInterval(timerInterval);
+                        submitTest(true); // Auto-submit without confirmation
                         return;
                     }
                     const h = Math.floor(diff / 3600000);
