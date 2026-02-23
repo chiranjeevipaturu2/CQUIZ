@@ -135,9 +135,28 @@
             const ExamLockdown = {
                 isActive: false,
                 examStarted: false,
+                isTerminated: false,
+
+                async checkPreviousAttempt() {
+                    try {
+                        const q = query(collection(db, "attempts"),
+                            where("studentRoll", "==", user.roll),
+                            where("testId", "==", testId),
+                            where("status", "==", "terminated")
+                        );
+                        const querySnapshot = await getDocs(q);
+                        if (!querySnapshot.empty) {
+                            this.showTerminationScreen("Previous attempt was terminated. You cannot re-enter.");
+                            return true;
+                        }
+                    } catch (err) {
+                        console.error("Check attempt error:", err);
+                    }
+                    return false;
+                },
 
                 enable() {
-                    if (!this.examStarted) return;
+                    if (!this.examStarted || this.isTerminated) return;
                     if (this.isActive) return;
                     this.isActive = true;
 
@@ -146,6 +165,11 @@
                     document.addEventListener('contextmenu', this.handleContextMenu);
                     document.addEventListener('selectstart', this.handleSelectStart);
                     document.addEventListener('dragstart', this.handleDragStart);
+
+                    // New detection listeners
+                    document.addEventListener('visibilitychange', this.handleVisibilityChange);
+                    window.addEventListener('blur', this.handleBlur);
+                    window.addEventListener('beforeunload', this.handleBeforeUnload);
 
                     document.body.style.userSelect = 'none';
                     document.body.style.webkitUserSelect = 'none';
@@ -160,17 +184,134 @@
                     document.removeEventListener('selectstart', this.handleSelectStart);
                     document.removeEventListener('dragstart', this.handleDragStart);
 
+                    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+                    window.removeEventListener('blur', this.handleBlur);
+                    window.removeEventListener('beforeunload', this.handleBeforeUnload);
+
                     document.body.style.userSelect = 'auto';
                     document.body.style.webkitUserSelect = 'auto';
                 },
 
                 handleFullscreenChange: () => {
-                    if (!ExamLockdown.examStarted) return;
-
+                    if (!ExamLockdown.examStarted || ExamLockdown.isTerminated) return;
                     if (!document.fullscreenElement && ExamLockdown.isActive) {
-                        alert("Since you have exited fullscreen, the test has been terminated.");
-                        submitTest(true);
+                        ExamLockdown.terminateExam("Fullscreen exited");
                     }
+                },
+
+                handleVisibilityChange: () => {
+                    if (document.visibilityState === 'hidden' && ExamLockdown.isActive) {
+                        ExamLockdown.terminateExam("Tab switching detected");
+                    }
+                },
+
+                handleBlur: () => {
+                    if (ExamLockdown.isActive) {
+                        ExamLockdown.terminateExam("Focus lost / Alt+Tab detected");
+                    }
+                },
+
+                handleBeforeUnload: (e) => {
+                    if (ExamLockdown.isActive) {
+                        // Attempt logging on refresh if possible
+                        ExamLockdown.terminateExam("Page refresh/reload detected");
+                        e.preventDefault();
+                        e.returnValue = '';
+                    }
+                },
+
+                async terminateExam(reason) {
+                    if (this.isTerminated) return;
+                    this.isTerminated = true;
+                    this.isActive = false;
+                    this.disable();
+
+                    if (timerInterval) clearInterval(timerInterval);
+                    localStorage.removeItem(TIMER_KEY);
+                    sessionStorage.removeItem(SHUFFLE_KEY);
+
+                    // Calculate stats so far
+                    let attempted = 0;
+                    let correct = 0;
+                    let wrong = 0;
+                    test.questions.forEach((q, originalIdx) => {
+                        if (answers.hasOwnProperty(originalIdx)) {
+                            attempted++;
+                            const cIdx = q.sessionCorrectIndex !== undefined ? q.sessionCorrectIndex : q.correctIndex;
+                            if (answers[originalIdx] === cIdx) correct++;
+                            else wrong++;
+                        }
+                    });
+
+                    // Log to Firestore
+                    try {
+                        const attemptId = `term_${user.roll}_${testId}_${Date.now()}`;
+                        await setDoc(doc(db, "attempts", attemptId), {
+                            userIdentifier: user.roll,
+                            studentRoll: user.roll,
+                            testId: testId,
+                            terminationReason: reason,
+                            timestamp: Date.now(),
+                            status: "terminated",
+                            stats: { attempted, correct, wrong, score: correct }
+                        });
+                    } catch (err) {
+                        console.error("Failed to log termination:", err);
+                    }
+
+                    this.showTerminationScreen(reason, { attempted, correct, wrong });
+                },
+
+                showTerminationScreen(reason, stats = null) {
+                    let statsHTML = "";
+                    if (stats) {
+                        statsHTML = `
+                            <div class="glass-card mb-4" style="background: rgba(255,255,255,0.03); padding: 1.5rem; text-align: left; border: 1px solid rgba(255,255,255,0.05);">
+                                <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--primary);">Your performance for this attempt:</h3>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                                    <div>
+                                        <p class="text-muted" style="font-size: 0.9rem;">Attempted</p>
+                                        <p style="font-size: 1.25rem; font-weight: 700;">${stats.attempted}</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-muted" style="font-size: 0.9rem;">Score</p>
+                                        <p style="font-size: 1.25rem; font-weight: 700; color: var(--primary);">${stats.correct}</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-muted" style="font-size: 0.9rem;">Correct</p>
+                                        <p style="font-size: 1.1rem; color: #6ee7b7;">${stats.correct}</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-muted" style="font-size: 0.9rem;">Wrong</p>
+                                        <p style="font-size: 1.1rem; color: #f472b6;">${stats.wrong}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    document.body.innerHTML = `
+                        <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0a0a0f; display: flex; align-items: center; justify-content: center; z-index: 10000; font-family: 'Outfit', sans-serif;">
+                            <div class="glass-card text-center" style="padding: 3rem; max-width: 550px; border: 1px solid rgba(239, 68, 68, 0.2); box-shadow: 0 0 50px rgba(239, 68, 68, 0.1);">
+                                <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #ef4444; margin-bottom: 1.5rem;">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                                </svg>
+                                <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem; color: #fff;">Exam Terminated</h1>
+                                <p style="font-size: 1.1rem; color: #ef4444; margin-bottom: 2rem; font-weight: 600;">Reason: ${reason}</p>
+                                
+                                ${statsHTML}
+
+                                <div class="mb-4" style="color: var(--text-muted); line-height: 1.6; font-size: 0.95rem;">
+                                    This attempt has been logged as terminated due to a security violation. 
+                                    The current attempt cannot be resumed, but you may start a new test. 
+                                </div>
+
+                                <button onclick="window.location.href='student.html'" class="btn btn-primary" style="padding: 0.8rem 2rem;">Return to Dashboard</button>
+                            </div>
+                        </div>
+                    `;
                 },
 
                 handleKeydown: (e) => {
@@ -376,13 +517,18 @@
                 const overlay = document.createElement('div');
                 overlay.style = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 10, 15, 0.98); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(10px);";
                 overlay.innerHTML = `
-                    <div class="glass-card text-center slide-up" style="padding: 3rem; max-width: 500px; border: 1px solid rgba(255,255,255,0.1);">
+                    <div class="glass-card text-center slide-up" style="padding: 3rem; max-width: 600px; border: 1px solid rgba(255,255,255,0.1);">
                         <h2 class="mb-4">Exam Instructions</h2>
-                        <ul class="text-muted mb-4" style="text-align: left; list-style: none; padding: 0;">
-                            <li class="mb-2">• This test must be taken in Fullscreen Mode.</li>
-                            <li class="mb-2">• Exiting fullscreen even once will immediately terminate the test.</li>
-                            <li class="mb-2">• When time expires, test auto-submits instantly.</li>
-                        </ul>
+                        <div class="text-muted mb-4" style="text-align: left; line-height: 1.8;">
+                            <ul style="list-style: none; padding: 0;">
+                                <li class="mb-2">• This is a monitored digital assessment.</li>
+                                <li class="mb-2">• This test must be taken in Fullscreen Mode.</li>
+                                <li class="mb-2">• Switching browser/Exiting fullscreen mode will terminate the exam.</li>
+                                <li class="mb-2">• Once terminated, the current attempt cannot be resumed.</li>
+                                <li class="mb-2">• When time expires, test auto-submits instantly.</li>
+                                <li class="mb-4">• Ensure stable internet connectivity before starting.</li>
+                            </ul>
+                        </div>
                         <button id="startExamBtn" class="btn btn-primary btn-lg">Start Exam in Fullscreen</button>
                     </div>
                 `;
