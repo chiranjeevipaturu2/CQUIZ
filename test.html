@@ -132,6 +132,7 @@
 
             const ExamLockdown = {
                 isActive: false,
+                examStarted: false,
                 violationCount: 0,
                 lastViolationTime: 0,
 
@@ -141,7 +142,7 @@
                     this.violationCount = 0;
                     this.lastViolationTime = 0;
 
-                    // Dual triggers for tab switch detection
+                    // Listeners are added but will return early if !examStarted
                     window.addEventListener('blur', this.handleVisibilityChange);
                     document.addEventListener('visibilitychange', this.handleVisibilityChange);
 
@@ -156,8 +157,8 @@
                 },
 
                 disable() {
-                    if (!this.isActive) return;
                     this.isActive = false;
+                    this.examStarted = false;
 
                     if (document.fullscreenElement) {
                         document.exitFullscreen().catch(() => { });
@@ -191,16 +192,17 @@
                 },
 
                 handleFullscreenChange: () => {
+                    if (!ExamLockdown.examStarted) return;
                     if (!document.fullscreenElement && ExamLockdown.isActive) {
                         ExamLockdown.terminateQuiz("Quiz Terminated Due To Security Violation: Fullscreen Exited");
                     }
                 },
 
                 handleVisibilityChange: () => {
-                    if (!ExamLockdown.isActive) return;
+                    if (!ExamLockdown.examStarted) return;
 
                     const now = Date.now();
-                    // Debounce: Count violation only once per 2 seconds to avoid blur/visibility double-count
+                    // Debounce strike system: max 1 violation per 2 seconds
                     if (now - ExamLockdown.lastViolationTime < 2000) return;
 
                     if (document.visibilityState === 'hidden' || document.hidden || !document.hasFocus()) {
@@ -216,6 +218,7 @@
                 },
 
                 handleKeydown: (e) => {
+                    if (!ExamLockdown.examStarted) return;
                     const forbiddenKeys = ['c', 'v', 'x', 'a', 'u', 's', 'p'];
                     const isCtrl = e.ctrlKey || e.metaKey;
                     const isShift = e.shiftKey;
@@ -239,16 +242,19 @@
                 },
 
                 handleContextMenu: (e) => {
+                    if (!ExamLockdown.examStarted) return;
                     e.preventDefault();
                     return false;
                 },
 
                 handleSelectStart: (e) => {
+                    if (!ExamLockdown.examStarted) return;
                     e.preventDefault();
                     return false;
                 },
 
                 handleDragStart: (e) => {
+                    if (!ExamLockdown.examStarted) return;
                     e.preventDefault();
                     return false;
                 },
@@ -261,8 +267,9 @@
                         container.innerHTML = `
                             <div class="glass-card text-center slide-up" style="margin: auto; padding: 3rem; max-width: 500px;">
                                 <div class="badge badge-pink mb-4">Security Violation</div>
-                                <h2 style="color: var(--error); margin-bottom: 1.5rem;">${message}</h2>
-                                <p class="text-muted mb-4">Your quiz session has been terminated for security reasons.</p>
+                                <h2 style="color: var(--error); margin-bottom: 1.5rem;">Terminated</h2>
+                                <p class="text-muted mb-4">${message}</p>
+                                <p class="text-muted mb-4">Your quiz session has been closed.</p>
                                 <button onclick="window.location.href='student.html'" class="btn btn-primary">Return to Dashboard</button>
                             </div>
                         `;
@@ -285,9 +292,9 @@
                 `;
                 overlay.innerHTML = `
                     <div class="glass-card text-center slide-up" style="padding: 3rem; border: 1px solid rgba(255,255,255,0.1);">
-                        <h2 class="mb-4">Strict Exam Lockdown</h2>
+                        <h2 class="mb-4">Secure Exam</h2>
                         <p class="text-muted mb-4" style="max-width: 400px;">
-                            This test must be taken in full screen mode. Switching tabs or exiting fullscreen will terminate your session.
+                            Fullscreen mode is required. Switching tabs will terminate your session.
                         </p>
                         <button id="startExamFinalBtn" class="btn btn-primary btn-lg">Start Exam</button>
                     </div>
@@ -297,9 +304,13 @@
                 document.getElementById('startExamFinalBtn').onclick = async () => {
                     const success = await ExamLockdown.enterFullscreen();
                     if (success) {
-                        overlay.remove();
-                        if (mainContainer) mainContainer.style.opacity = '1';
-                        ExamLockdown.enable();
+                        // Activate security delay to allow browser to stabilize
+                        setTimeout(() => {
+                            overlay.remove();
+                            if (mainContainer) mainContainer.style.opacity = '1';
+                            ExamLockdown.enable();
+                            ExamLockdown.examStarted = true;
+                        }, 300);
                     }
                 };
             }
