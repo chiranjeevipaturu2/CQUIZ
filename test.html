@@ -141,12 +141,15 @@
 
                     this.enterFullscreen();
 
+                    // Dual triggers for tab switch detection
                     window.addEventListener('blur', this.handleVisibilityChange);
                     document.addEventListener('visibilitychange', this.handleVisibilityChange);
+
                     document.addEventListener('fullscreenchange', this.handleFullscreenChange);
                     window.addEventListener('keydown', this.handleKeydown, true);
                     document.addEventListener('contextmenu', this.handleContextMenu);
                     document.addEventListener('selectstart', this.handleSelectStart);
+                    document.addEventListener('dragstart', this.handleDragStart);
 
                     document.body.style.userSelect = 'none';
                     document.body.style.webkitUserSelect = 'none';
@@ -166,6 +169,7 @@
                     window.removeEventListener('keydown', this.handleKeydown, true);
                     document.removeEventListener('contextmenu', this.handleContextMenu);
                     document.removeEventListener('selectstart', this.handleSelectStart);
+                    document.removeEventListener('dragstart', this.handleDragStart);
 
                     document.body.style.userSelect = 'auto';
                     document.body.style.webkitUserSelect = 'auto';
@@ -187,12 +191,13 @@
                 },
 
                 handleVisibilityChange: () => {
-                    if (document.visibilityState === 'hidden' || document.hidden) {
+                    if (!ExamLockdown.isActive) return;
+                    if (document.visibilityState === 'hidden' || document.hidden || !document.hasFocus()) {
                         ExamLockdown.violationCount++;
                         if (ExamLockdown.violationCount === 1) {
                             alert("Warning: Do not switch tabs. Next attempt will terminate the quiz.");
                         } else {
-                            ExamLockdown.terminateQuiz("Quiz Terminated Due To Security Violation");
+                            ExamLockdown.terminateQuiz("Quiz Terminated Due To Security Violation: Tab Switch Detected");
                         }
                     }
                 },
@@ -203,14 +208,17 @@
                     const isShift = e.shiftKey;
                     const key = e.key.toLowerCase();
 
+                    // Block common shortcuts
                     if (isCtrl && forbiddenKeys.includes(key)) {
                         e.preventDefault();
                         return false;
                     }
+                    // Block DevTools shortcuts
                     if (isCtrl && isShift && ['i', 'j', 'c'].includes(key)) {
                         e.preventDefault();
                         return false;
                     }
+                    // Block F11/F12
                     if (['f11', 'f12'].includes(key)) {
                         e.preventDefault();
                         return false;
@@ -223,6 +231,11 @@
                 },
 
                 handleSelectStart: (e) => {
+                    e.preventDefault();
+                    return false;
+                },
+
+                handleDragStart: (e) => {
                     e.preventDefault();
                     return false;
                 },
@@ -243,6 +256,32 @@
                     }
                 }
             };
+
+            function showStartOverlay() {
+                const overlay = document.createElement('div');
+                overlay.id = 'examStartOverlay';
+                overlay.style = `
+                    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                    background: rgba(10, 10, 15, 0.98); z-index: 9999;
+                    display: flex; flex-direction: column; align-items: center; justify-content: center;
+                    backdrop-filter: blur(10px);
+                `;
+                overlay.innerHTML = `
+                    <div class="glass-card text-center slide-up" style="padding: 3rem; border: 1px solid rgba(255,255,255,0.1);">
+                        <h2 class="mb-4">Strict Exam Lockdown</h2>
+                        <p class="text-muted mb-4" style="max-width: 400px;">
+                            This exam requires full-screen mode. Switching tabs or exiting fullscreen will terminate your session.
+                        </p>
+                        <button id="startExamFinalBtn" class="btn btn-primary btn-lg">Start Exam</button>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+
+                document.getElementById('startExamFinalBtn').onclick = () => {
+                    overlay.remove();
+                    ExamLockdown.enable();
+                };
+            }
 
             const TIMER_KEY = `cquiz_start_${testId}_${user.roll}`;
             const SHUFFLE_KEY = `cquiz_order_${testId}_${user.roll}`;
@@ -478,8 +517,8 @@
             updateControls();
             updateNavStatus(0);
 
-            // Enable Security Lockdown
-            ExamLockdown.enable();
+            // Trigger Start Overlay (Gesture-based Fullscreen)
+            showStartOverlay();
         }
 
         try {
