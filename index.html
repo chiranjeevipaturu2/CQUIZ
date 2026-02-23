@@ -32,20 +32,20 @@
                 <line x1="12" y1="22.08" x2="12" y2="12"></line>
             </svg>
             <h2
-                style="font-size: 2rem; margin-bottom: 0.5rem; background: linear-gradient(to right, #fff, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                style="font-size: 2rem; margin-bottom: 0.5rem; background: linear-gradient(to right, #fff, #a78bfa); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">
                 CQUIZ</h2>
-            <p>Role-Based Assessment Platform</p>
+            <p>Smart Assessment Platform</p>
         </div>
 
         <form id="loginForm">
             <div class="form-group">
                 <label class="form-label">Roll Number</label>
-                <input type="text" id="rollNumber" class="form-control" placeholder="e.g. STU101" required>
+                <input type="text" id="rollNumber" class="form-control" placeholder="Enter your rollno" required>
             </div>
 
             <div class="form-group">
                 <label class="form-label">Password</label>
-                <input type="password" id="password" class="form-control" placeholder="••••" required>
+                <input type="password" id="password" class="form-control" placeholder="Enter your password" required>
             </div>
 
             <div id="errorMsg" class="mb-4 text-center" style="color: var(--error); display: none; font-size: 0.9rem;">
@@ -53,12 +53,6 @@
 
             <button type="submit" class="btn btn-primary btn-block">Sign In</button>
         </form>
-
-        <div class="mt-4 text-center" style="font-size: 0.8rem; color: rgba(255,255,255,0.3);">
-            <p>Demo Credentials:</p>
-            <p>Teacher: TCH001 / TC01</p>
-            <p>Student: STU101 / ST01</p>
-        </div>
     </div>
 
     <script src="script.js"></script>
