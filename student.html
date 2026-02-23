@@ -10,7 +10,7 @@
 </head>
 
 <body>
-    <div class="container slide-up">
+    <div id="dashboardContent" class="container slide-up" style="transition: all 0.4s ease;">
         <header class="glass-card flex-between mb-4">
             <div>
                 <h1>Student Dashboard</h1>
@@ -84,7 +84,7 @@
                             <p class="text-muted">${test.questions.length} Questions</p>
                             <p class="text-muted" style="font-size:0.8rem; margin-top:0.5rem;">By: ${test.createdBy}</p>
                         </div>
-                        <button onclick="window.location.href='test.html?id=${test.id}'" class="btn btn-primary mt-4">Start Quiz</button>
+                        <button onclick="handleStartClick(event, '${test.id}')" class="btn btn-primary mt-4">Start Quiz</button>
                     </div>
                 `).join('');
             } else {
@@ -101,6 +101,17 @@
                 </tr>
             `).reverse().join('') : '<tr><td colspan="3" class="text-center">No history yet.</td></tr>';
         }
+
+        window.handleStartClick = function (e, testId) {
+            e.preventDefault();
+            const container = document.getElementById('dashboardContent');
+            container.style.opacity = '0';
+            container.style.transform = 'scale(0.95)';
+
+            setTimeout(() => {
+                window.location.href = `test.html?id=${testId}`;
+            }, 400);
+        };
 
         loadDashboard();
     </script>
